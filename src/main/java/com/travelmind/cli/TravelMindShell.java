@@ -1,18 +1,18 @@
 package com.travelmind.cli;
 
-import org.jline.reader.LineReader;
-import org.jline.reader.LineReaderBuilder;
-import org.jline.reader.impl.DefaultParser;
-import org.jline.terminal.Terminal;
-import org.jline.terminal.TerminalBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+import java.io.PrintStream;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.util.Scanner;
+
 /**
- * TravelMind 命令行 Shell
+ * TravelMind command line shell.
  */
 @Component
 @ConditionalOnProperty(name = "travelmind.cli.enabled", havingValue = "true", matchIfMissing = true)
@@ -30,36 +30,20 @@ public class TravelMindShell implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        // 设置控制台编码为 UTF-8
-        try {
-            System.setOut(new java.io.PrintStream(System.out, true, "UTF-8"));
-        } catch (Exception ignored) {}
-
+        configureConsoleEncoding();
         cliRenderer.renderWelcome();
 
-        try {
-            // 创建 JLine Terminal
-            Terminal terminal = TerminalBuilder.builder()
-                    .system(true)
-                    .build();
-
-            LineReader lineReader = LineReaderBuilder.builder()
-                    .terminal(terminal)
-                    .parser(new DefaultParser())
-                    .build();
-
-            // 主循环
+        try (Scanner scanner = new Scanner(System.in, consoleCharset())) {
             boolean running = true;
             while (running) {
                 try {
-                    String line = lineReader.readLine("TravelMind > ");
-
-                    if (line == null) {
-                        // Ctrl+D 或 EOF
+                    System.out.print("TravelMind > ");
+                    if (!scanner.hasNextLine()) {
                         break;
                     }
 
-                    if (line.isBlank()) {
+                    String line = scanner.nextLine();
+                    if (line == null || line.isBlank()) {
                         continue;
                     }
 
@@ -69,43 +53,34 @@ public class TravelMindShell implements CommandLineRunner {
                     cliRenderer.renderError("处理输入时出错: " + e.getMessage());
                 }
             }
-        } catch (Exception e) {
-            log.error("Shell initialization failed", e);
-            cliRenderer.renderError("Shell 初始化失败: " + e.getMessage());
-
-            // 降级到简单输入模式
-            runSimpleMode();
         }
 
         cliRenderer.renderGoodbye();
     }
 
-    /**
-     * 简单输入模式（降级方案）
-     */
-    private void runSimpleMode() {
-        java.util.Scanner scanner = new java.util.Scanner(System.in);
+    private void configureConsoleEncoding() {
+        Charset charset = consoleCharset();
+        try {
+            System.setOut(new PrintStream(System.out, true, charset));
+            System.setErr(new PrintStream(System.err, true, charset));
+        } catch (Exception e) {
+            log.debug("Failed to configure console charset: {}", charset, e);
+        }
+    }
 
-        boolean running = true;
-        while (running) {
-            try {
-                System.out.print("TravelMind > ");
-                if (!scanner.hasNextLine()) {
-                    break;
-                }
-
-                String line = scanner.nextLine();
-                if (line == null || line.isBlank()) {
-                    continue;
-                }
-
-                running = commandRouter.handle(line.trim());
-            } catch (Exception e) {
-                log.error("Error processing input", e);
-                cliRenderer.renderError("处理输入时出错: " + e.getMessage());
-            }
+    private Charset consoleCharset() {
+        String encoding = System.getProperty("native.encoding");
+        if (encoding == null || encoding.isBlank()) {
+            encoding = System.getProperty("sun.stdout.encoding");
+        }
+        if (encoding == null || encoding.isBlank()) {
+            encoding = Charset.defaultCharset().name();
         }
 
-        scanner.close();
+        try {
+            return Charset.forName(encoding);
+        } catch (Exception e) {
+            return StandardCharsets.UTF_8;
+        }
     }
 }

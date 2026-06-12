@@ -2,18 +2,16 @@
 
 TravelMind 是一个基于 Java 的命令行智能行程规划助手。用户可以像聊天一样输入旅行需求，例如“帮我规划去上海的三日旅游的行程”，系统会结合大模型、地图 POI 数据、规则校验和内存会话状态生成 Markdown 行程，并支持多轮修改和导出。
 
-这个项目定位为面试展示项目，重点体现后端工程设计能力，而不是堆功能：清晰分层、可配置外部服务、内存化状态管理、大模型工程化接入、可测试的核心流程。
-
 ## 核心能力
 
 - 使用 CLI 聊天窗口进行交互，支持普通自然语言输入和系统命令。
-- 接入小米 MiMo 大模型，使用 Anthropic API 兼容格式。
+- 通过 `LlmClient` 抽象接入大模型，当前实现使用 Anthropic Messages 兼容格式。
 - 接入高德地图 API 查询 POI 和地理编码信息。
 - 路线距离和耗时默认使用本地 Haversine 公式估算，不调用高德路线规划。
 - 使用内存仓库存储会话、需求、行程、POI 缓存和大模型调用日志。
 - 支持多轮对话修改已有行程，例如“第二天不要去博物馆，换成迪士尼”。
 - 支持导出当前行程为 Markdown 文件。
-- 使用 `.env` 管理 MiMo、高德和导出目录等敏感配置。
+- 使用 `.env` 管理大模型、高德和导出目录等敏感配置。
 - 无需 MySQL、Redis、前端页面，适合本地演示和面试讲解。
 
 ## 技术栈
@@ -22,12 +20,12 @@ TravelMind 是一个基于 Java 的命令行智能行程规划助手。用户可
 | --- | --- | --- |
 | 语言 | Java 17+ | 项目使用 Java 17 编译目标 |
 | 框架 | Spring Boot 3.3.0 | 管理配置、Bean 和应用生命周期 |
-| CLI | JLine 3.21 | 实现交互式命令行体验 |
-| 大模型 | 小米 MiMo | Anthropic API 兼容格式 |
+| CLI | Java Scanner | 实现轻量交互式命令行体验 |
+| 大模型 | LLM Adapter | 通过 `LlmClient` 抽象接入，当前实现兼容 Anthropic Messages 格式 |
 | 地图 | 高德地图 API | 查询 POI 和地理编码 |
 | 路线估算 | Haversine | 本地计算两点距离和估算耗时 |
 | 存储 | ConcurrentHashMap | 内存仓库，无外部数据库依赖 |
-| HTTP | OkHttp | 调用 MiMo 和高德 API |
+| HTTP | OkHttp | 调用大模型和高德 API |
 | JSON | Jackson | 处理 LLM、地图接口和对象序列化 |
 | 配置 | dotenv-java | 从 `.env` 加载敏感配置 |
 | 测试 | JUnit 5 + Mockito | 单元测试和服务级流程测试 |
@@ -68,8 +66,8 @@ Copy-Item .env.example .env
 LLM_PROVIDER=mimo
 MIMO_BASE_URL=https://token-plan-cn.xiaomimimo.com/anthropic
 MIMO_CHAT_PATH=/v1/messages
-MIMO_API_KEY=your_mimo_api_key
-MIMO_MODEL=mimo-v2.5-pro
+MIMO_API_KEY=your_llm_api_key
+MIMO_MODEL=your_model_name
 MIMO_TEMPERATURE=0.4
 MIMO_TIMEOUT_SECONDS=60
 
@@ -80,15 +78,17 @@ AMAP_TIMEOUT_SECONDS=20
 EXPORT_DIR=exports
 ```
 
+`MIMO_*` 是当前内置大模型 adapter 沿用的配置前缀。项目业务层只依赖 `LlmClient`，如果要接入其他兼容 Anthropic Messages 格式的模型服务，可以替换 `MIMO_BASE_URL`、`MIMO_MODEL` 和 `MIMO_API_KEY`；如果协议不同，则新增一个 `LlmClient` 实现类即可。
+
 配置说明：
 
 | 配置项 | 必填 | 说明 |
 | --- | --- | --- |
-| `LLM_PROVIDER` | 是 | 当前只支持 `mimo` |
-| `MIMO_BASE_URL` | 是 | MiMo Anthropic 兼容接口基础地址 |
-| `MIMO_CHAT_PATH` | 是 | MiMo 对话接口路径，默认 `/v1/messages` |
-| `MIMO_API_KEY` | 是 | MiMo API Key |
-| `MIMO_MODEL` | 是 | 使用的 MiMo 模型名称 |
+| `LLM_PROVIDER` | 是 | 大模型 provider，当前内置实现使用 `mimo` 作为配置名 |
+| `MIMO_BASE_URL` | 是 | Anthropic Messages 兼容接口基础地址 |
+| `MIMO_CHAT_PATH` | 是 | 对话接口路径，默认 `/v1/messages` |
+| `MIMO_API_KEY` | 是 | 大模型 API Key |
+| `MIMO_MODEL` | 是 | 使用的模型名称 |
 | `MIMO_TEMPERATURE` | 否 | 大模型采样温度，默认 `0.4` |
 | `MIMO_TIMEOUT_SECONDS` | 否 | 大模型请求超时时间 |
 | `AMAP_API_KEY` | 是 | 高德地图 API Key |
@@ -172,7 +172,7 @@ flowchart TD
     Router --> Conversation["ConversationManager"]
     Router --> Planner["TripPlannerService"]
     Planner --> Intent["IntentParser"]
-    Intent --> LLM["MiMo LLM"]
+    Intent --> LLM["LLM Adapter"]
     Planner --> Context["TripContextBuilder"]
     Planner --> POI["CandidatePoiBuilder"]
     POI --> Amap["AmapService / AmapClient"]
@@ -193,7 +193,7 @@ flowchart TD
 | CLI 层 | `com.travelmind.cli` | 读取用户输入、解析命令、渲染输出 |
 | 会话层 | `com.travelmind.conversation` | 管理当前会话、当前行程和历史上下文 |
 | 规划层 | `com.travelmind.planner` | 编排行程生成、修改、路线估算和规则校验 |
-| 大模型层 | `com.travelmind.llm` | 封装 MiMo 请求、Prompt 模板和调用日志 |
+| 大模型层 | `com.travelmind.llm` | 封装大模型适配接口、Prompt 模板和调用日志 |
 | 地图层 | `com.travelmind.amap` | 封装高德 POI 搜索和地理编码 |
 | 领域层 | `com.travelmind.domain` | 定义行程、天计划、活动、POI、路线等模型 |
 | 存储层 | `com.travelmind.storage` | 使用内存仓库存储业务状态 |
@@ -286,12 +286,12 @@ travelmind
 1. 用户在 CLI 输入自然语言需求。
 2. `CommandRouter` 判断这是普通输入，不是系统命令。
 3. `TripPlannerServiceImpl.handleUserMessage` 构建当前会话上下文。
-4. `IntentParserImpl` 调用 MiMo 解析用户意图，得到目的地、天数、偏好等结构化信息。
+4. `IntentParserImpl` 通过 `LlmClient` 调用大模型解析用户意图，得到目的地、天数、偏好等结构化信息。
 5. 如果目的地或天数缺失，系统返回追问内容，不覆盖当前已有行程。
 6. `TripContextBuilder` 补齐默认人数、预算、节奏、交通方式等字段。
 7. `CandidatePoiBuilder` 通过高德地图查询候选 POI，并写入 POI 缓存。
 8. `TripPlannerServiceImpl` 使用 Haversine 公式估算相邻 POI 的距离和耗时。
-9. `ItineraryGenerator` 调用 MiMo 生成 Markdown 行程。
+9. `ItineraryGenerator` 通过 `LlmClient` 调用大模型生成 Markdown 行程。
 10. `RuleValidator` 做基础规则校验，例如天数、活动结构、提醒信息等。
 11. 内存仓库保存 `TripRequest`、`Itinerary`，并更新当前会话的当前行程 ID。
 
@@ -300,7 +300,7 @@ travelmind
 1. 用户继续输入修改指令。
 2. 系统从 `TravelSessionRepository` 找到当前行程 ID。
 3. `ConversationManager` 和 `TripPlannerServiceImpl` 根据 `requestId` 恢复原始旅行需求。
-4. `ItineraryGenerator.modify` 把当前 Markdown、修改要求、相关 POI 一起交给 MiMo。
+4. `ItineraryGenerator.modify` 把当前 Markdown、修改要求、相关 POI 一起交给大模型。
 5. 系统生成新版本行程，并保存为新的 `Itinerary`。
 6. 当前会话指向新版本，旧版本仍可通过 `/history` 查看。
 
@@ -347,7 +347,7 @@ travelmind-上海-3days-202606122315.md
 
 ### 大模型职责边界
 
-MiMo 主要负责两件事：
+大模型主要负责两件事：
 
 1. 理解自然语言需求，输出结构化意图。
 2. 根据上下文生成或修改 Markdown 行程。

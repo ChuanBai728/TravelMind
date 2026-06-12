@@ -81,9 +81,11 @@ public class CliRenderer {
         }
 
         private void printLine(String rawLine) {
+            // 清理装饰字符（LLM 可能在标题前输出 ? ? ? 等装饰符号）
+            String cleaned = rawLine.replaceAll("^[\\s>*?❓❓▸►●◆★☆-]+", "").trim();
             String trimmed = rawLine.trim();
 
-            if (trimmed.isEmpty()) {
+            if (cleaned.isEmpty() && trimmed.isEmpty()) {
                 if (inList) inList = false;
                 System.out.println();
                 return;
@@ -95,33 +97,41 @@ public class CliRenderer {
                 return;
             }
 
-            // # 一级标题
-            if (trimmed.startsWith("# ")) {
-                String title = stripMd(trimmed.substring(2).trim());
-                System.out.println();
-                System.out.println("============================================================");
-                System.out.println("  " + title);
-                System.out.println("============================================================");
+            // # 一级标题（兼容 #? 标题、# 标题）
+            if (trimmed.matches("^#{1,3}[^#\\w]?.*")) {
+                String content = trimmed.replaceFirst("^#{1,3}[^#\\w]?\\s*", "");
+                int level = trimmed.indexOf(' ');
+                if (level < 0) level = trimmed.length();
+                level = Math.min(level, 3);
+                String title = stripMd(content.trim());
+
+                if (level == 1) {
+                    System.out.println();
+                    System.out.println("============================================================");
+                    System.out.println("  " + title);
+                    System.out.println("============================================================");
+                } else if (level == 2) {
+                    System.out.println();
+                    System.out.println("------------------------------------------------------------");
+                    System.out.println("  " + title);
+                    System.out.println("------------------------------------------------------------");
+                } else {
+                    System.out.println();
+                    System.out.println("  " + title);
+                }
                 inList = false;
                 return;
             }
 
-            // ## 二级标题
-            if (trimmed.startsWith("## ")) {
-                String title = stripMd(trimmed.substring(3).trim());
-                System.out.println();
-                System.out.println("------------------------------------------------------------");
-                System.out.println("  " + title);
-                System.out.println("------------------------------------------------------------");
-                inList = false;
-                return;
-            }
-
-            // ### 三级标题
-            if (trimmed.startsWith("### ")) {
-                String title = stripMd(trimmed.substring(4).trim());
-                System.out.println();
-                System.out.println("  " + title);
+            // ? 装饰标题行（LLM 输出的 ? 当日行程安排 等）
+            if (trimmed.matches("^[?❓❓]\\s*.*")) {
+                String title = stripMd(trimmed.replaceFirst("^[?❓❓]\\s*", "").trim());
+                if (!title.isEmpty()) {
+                    System.out.println();
+                    System.out.println("------------------------------------------------------------");
+                    System.out.println("  " + title);
+                    System.out.println("------------------------------------------------------------");
+                }
                 inList = false;
                 return;
             }
@@ -211,35 +221,42 @@ public class CliRenderer {
                 continue;
             }
 
-            // 一级标题 # xxx
-            if (trimmed.startsWith("# ")) {
-                String title = removeMarkdownFormatting(trimmed.substring(2).trim());
-                sb.append("\n============================================================\n");
-                sb.append("  ").append(title).append("\n");
-                sb.append("============================================================\n");
+            // 标题（兼容 # 标题、#? 标题、## 标题、### 标题）
+            if (trimmed.matches("^#{1,3}[^#\\w]?.*")) {
+                String content = trimmed.replaceFirst("^#{1,3}[^#\\w]?\\s*", "");
+                int level = trimmed.indexOf(' ');
+                if (level < 0) level = trimmed.length();
+                level = Math.min(level, 3);
+                String title = removeMarkdownFormatting(content.trim());
+
+                if (level == 1) {
+                    sb.append("\n============================================================\n");
+                    sb.append("  ").append(title).append("\n");
+                    sb.append("============================================================\n");
+                } else if (level == 2) {
+                    sb.append("\n------------------------------------------------------------\n");
+                    sb.append("  ").append(title).append("\n");
+                    sb.append("------------------------------------------------------------\n");
+                } else {
+                    sb.append("\n  ").append(title).append("\n");
+                }
                 inList = false;
                 continue;
             }
 
-            // 二级标题 ## xxx
-            if (trimmed.startsWith("## ")) {
-                String title = removeMarkdownFormatting(trimmed.substring(3).trim());
-                sb.append("\n------------------------------------------------------------\n");
-                sb.append("  ").append(title).append("\n");
-                sb.append("------------------------------------------------------------\n");
+            // ? 装饰标题行
+            if (trimmed.matches("^[?❓❓]\\s*.*")) {
+                String title = removeMarkdownFormatting(trimmed.replaceFirst("^[?❓❓]\\s*", "").trim());
+                if (!title.isEmpty()) {
+                    sb.append("\n------------------------------------------------------------\n");
+                    sb.append("  ").append(title).append("\n");
+                    sb.append("------------------------------------------------------------\n");
+                }
                 inList = false;
                 continue;
             }
 
-            // 三级标题 ### xxx
-            if (trimmed.startsWith("### ")) {
-                String title = removeMarkdownFormatting(trimmed.substring(4).trim());
-                sb.append("\n  ").append(title).append("\n");
-                inList = false;
-                continue;
-            }
-
-            // > 引用行（可能是 > **标题** 格式）
+            // > 引用行
             if (trimmed.startsWith("> ")) {
                 String content = removeMarkdownFormatting(trimmed.substring(2).trim());
                 sb.append("  ").append(content).append("\n");

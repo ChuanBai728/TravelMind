@@ -96,6 +96,7 @@ public class TripPlannerServiceImpl implements TripPlannerService {
         }
 
         // 意图解析（同步，不需要流式）
+        System.out.println("  正在分析你的需求...");
         IntentParser.ParsedIntent parsedIntent = intentParser.parse(userInput, context);
 
         if (parsedIntent.isNeedClarification()) {

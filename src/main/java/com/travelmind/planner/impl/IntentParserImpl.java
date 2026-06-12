@@ -19,6 +19,8 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 意图解析器实现
@@ -27,6 +29,20 @@ import java.util.List;
 public class IntentParserImpl implements IntentParser {
 
     private static final Logger log = LoggerFactory.getLogger(IntentParserImpl.class);
+
+    /**
+     * 快速路径正则：匹配 "帮我规划去南京的一日游" 等常见句式
+     * 捕获组：1=目的地, 2=天数
+     */
+    private static final Pattern QUICK_NEW_PLAN = Pattern.compile(
+            "(?:帮我)?(?:规划|制定|安排).*?去([^的,，。！!?？\\s]+?)的?(\\d+|[一二三四五六七八九十]+)[日天]",
+            Pattern.CASE_INSENSITIVE
+    );
+
+    /**
+     * 中文数字到阿拉伯数字映射
+     */
+    private static final String[] CN_NUMS = {"零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"};
 
     private final LlmClientFactory llmClientFactory;
     private final ObjectMapper objectMapper;
@@ -41,10 +57,101 @@ public class IntentParserImpl implements IntentParser {
 
     @Override
     public ParsedIntent parse(String userInput, TripContext context) {
+        // 快速路径：正则匹配常见句式，跳过 LLM 调用
+        ParsedIntent quickResult = tryQuickParse(userInput);
+        if (quickResult != null) {
+            log.info("Quick parse matched, skipping LLM intent parsing");
+            return quickResult;
+        }
+
+        // 慢路径：LLM 意图解析
+        return parseWithLlm(userInput, context);
+    }
+
+    /**
+     * 尝试正则快速解析，匹配常见模式时直接返回，避免 LLM 调用
+     */
+    private ParsedIntent tryQuickParse(String input) {
+        Matcher matcher = QUICK_NEW_PLAN.matcher(input);
+        if (!matcher.find()) {
+            return null;
+        }
+
+        String destination = matcher.group(1).trim();
+        String daysStr = matcher.group(2).trim();
+
+        if (destination.isEmpty() || daysStr.isEmpty()) {
+            return null;
+        }
+
+        int days = parseDays(daysStr);
+        if (days <= 0 || days > 30) {
+            return null;
+        }
+
+        TripRequest tripRequest = new TripRequest();
+        tripRequest.setRawInput(input);
+        tripRequest.setDestination(destination);
+        tripRequest.setDurationDays(days);
+
+        // 尝试提取人数
+        Pattern peoplePattern = Pattern.compile("(\\d+)\\s*人");
+        Matcher peopleMatcher = peoplePattern.matcher(input);
+        if (peopleMatcher.find()) {
+            tripRequest.setPeopleCount(Integer.parseInt(peopleMatcher.group(1)));
+        }
+
+        // 尝试提取日期
+        Pattern datePattern = Pattern.compile("(\\d{4})[年./-](\\d{1,2})[月./-](\\d{1,2})");
+        Matcher dateMatcher = datePattern.matcher(input);
+        if (dateMatcher.find()) {
+            try {
+                String dateStr = String.format("%s-%02d-%02d",
+                        dateMatcher.group(1),
+                        Integer.parseInt(dateMatcher.group(2)),
+                        Integer.parseInt(dateMatcher.group(3)));
+                tripRequest.setStartDate(LocalDate.parse(dateStr, DateTimeFormatter.ISO_LOCAL_DATE));
+            } catch (Exception ignored) {
+            }
+        }
+
+        ParsedIntent intent = new ParsedIntent();
+        intent.setIntent("NEW_PLAN");
+        intent.setTripRequest(tripRequest);
+        intent.setNeedClarification(false);
+        return intent;
+    }
+
+    private int parseDays(String daysStr) {
+        try {
+            return Integer.parseInt(daysStr);
+        } catch (NumberFormatException e) {
+            // 中文数字
+            for (int i = 0; i < CN_NUMS.length; i++) {
+                if (CN_NUMS[i].equals(daysStr)) {
+                    return i;
+                }
+            }
+            // 十一、十二...
+            if (daysStr.startsWith("十") && daysStr.length() == 2) {
+                int unit = indexOfCN(daysStr.charAt(1));
+                if (unit > 0) return 10 + unit;
+            }
+            return -1;
+        }
+    }
+
+    private int indexOfCN(char c) {
+        for (int i = 0; i < CN_NUMS.length; i++) {
+            if (CN_NUMS[i].charAt(0) == c) return i;
+        }
+        return -1;
+    }
+
+    private ParsedIntent parseWithLlm(String userInput, TripContext context) {
         LlmClient llmClient = llmClientFactory.getClient();
         LlmRequest request = new LlmRequest("INTENT_PARSE");
 
-        // 构建上下文摘要
         String contextSummary = buildContextSummary(context);
 
         request.addMessage("system", PromptTemplates.INTENT_PARSE_SYSTEM);
@@ -64,7 +171,6 @@ public class IntentParserImpl implements IntentParser {
             errorMessage = e.getMessage();
             throw e;
         } finally {
-            // 记录调用日志
             saveCallLog(request, response, status, errorMessage,
                     System.currentTimeMillis() - startTime, context.getSessionId());
         }
@@ -72,7 +178,6 @@ public class IntentParserImpl implements IntentParser {
 
     private ParsedIntent parseResponse(String content, String userInput) {
         try {
-            // 清理响应内容，移除可能的 Markdown 标记
             String jsonContent = content.trim();
             if (jsonContent.startsWith("```json")) {
                 jsonContent = jsonContent.substring(7);
@@ -88,10 +193,8 @@ public class IntentParserImpl implements IntentParser {
             JsonNode root = objectMapper.readTree(jsonContent);
             ParsedIntent intent = new ParsedIntent();
 
-            // 解析 intent
             intent.setIntent(root.path("intent").asText("UNKNOWN"));
 
-            // 解析 tripRequest
             TripRequest tripRequest = new TripRequest();
             tripRequest.setRawInput(userInput);
 
@@ -145,10 +248,8 @@ public class IntentParserImpl implements IntentParser {
 
             intent.setTripRequest(tripRequest);
 
-            // 解析 needClarification
             intent.setNeedClarification(root.path("needClarification").asBoolean(false));
 
-            // 解析 questions
             JsonNode questions = root.get("questions");
             if (questions != null && questions.isArray()) {
                 List<String> questionList = new ArrayList<>();
@@ -158,7 +259,6 @@ public class IntentParserImpl implements IntentParser {
                 intent.setQuestions(questionList);
             }
 
-            // 解析 modificationInstruction
             JsonNode modInstruction = root.get("modificationInstruction");
             if (modInstruction != null && !modInstruction.isNull()) {
                 intent.setModificationInstruction(modInstruction.asText());

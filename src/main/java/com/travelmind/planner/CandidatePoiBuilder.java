@@ -66,7 +66,12 @@ public class CandidatePoiBuilder {
         // 3. 调用高德地图 API 搜索（加延时避免 QPS 超限）
         for (int i = 0; i < keywords.size(); i++) {
             if (i > 0) {
-                try { Thread.sleep(200); } catch (InterruptedException ignored) {}
+                try {
+                    Thread.sleep(200);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
             }
             try {
                 List<Poi> pois = amapService.searchPois(city, keywords.get(i), SEARCH_LIMIT);

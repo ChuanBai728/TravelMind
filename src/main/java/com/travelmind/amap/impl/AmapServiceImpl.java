@@ -3,9 +3,7 @@ package com.travelmind.amap.impl;
 import com.travelmind.amap.AmapClient;
 import com.travelmind.amap.AmapService;
 import com.travelmind.amap.dto.AmapPoi;
-import com.travelmind.amap.dto.AmapRoute;
 import com.travelmind.domain.Poi;
-import com.travelmind.domain.RouteInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -66,56 +64,6 @@ public class AmapServiceImpl implements AmapService {
         }
 
         return poi;
-    }
-
-    @Override
-    public RouteInfo estimateRoute(Poi origin, Poi destination, String transportMode) {
-        if (origin.getLongitude() == null || origin.getLatitude() == null ||
-                destination.getLongitude() == null || destination.getLatitude() == null) {
-            log.warn("Cannot estimate route: missing coordinates");
-            return null;
-        }
-
-        String originLocation = origin.getLongitude() + "," + origin.getLatitude();
-        String destinationLocation = destination.getLongitude() + "," + destination.getLatitude();
-
-        // 将交通方式映射到高德 API 的 mode
-        String amapMode;
-        switch (transportMode) {
-            case "步行":
-                amapMode = "walking";
-                break;
-            case "自驾":
-                amapMode = "driving";
-                break;
-            case "公共交通":
-            case "公共交通+步行":
-            default:
-                amapMode = "driving"; // MVP 阶段先用驾车估算
-                break;
-        }
-
-        AmapRoute route = amapClient.getRoute(originLocation, destinationLocation, amapMode);
-        if (route == null || route.getPaths() == null || route.getPaths().isEmpty()) {
-            return null;
-        }
-
-        AmapRoute.Path path = route.getPaths().get(0);
-        RouteInfo routeInfo = new RouteInfo();
-        routeInfo.setOriginName(origin.getName());
-        routeInfo.setDestinationName(destination.getName());
-        routeInfo.setTransportMode(transportMode);
-
-        try {
-            routeInfo.setDistanceMeters(Integer.parseInt(path.getDistance()));
-            // 高德返回的 duration 是秒，转换为分钟
-            int durationSeconds = Integer.parseInt(path.getDuration());
-            routeInfo.setDurationMinutes(durationSeconds / 60);
-        } catch (NumberFormatException e) {
-            log.warn("Failed to parse route distance/duration");
-        }
-
-        return routeInfo;
     }
 
     private Poi convertToPoi(AmapPoi amapPoi) {

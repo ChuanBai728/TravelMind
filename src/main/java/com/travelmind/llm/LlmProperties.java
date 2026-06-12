@@ -20,7 +20,7 @@ public class LlmProperties {
 
     public static class MimoProperties {
         private String baseUrl;
-        private String chatPath = "/v1/chat/completions";
+        private String chatPath = "/v1/messages";
         private String apiKey;
         private String model;
         private Double temperature = 0.4;

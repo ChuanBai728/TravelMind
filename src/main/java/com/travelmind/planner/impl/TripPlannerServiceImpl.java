@@ -198,7 +198,8 @@ public class TripPlannerServiceImpl implements TripPlannerService {
             Poi origin = pois.get(i);
             Poi destination = pois.get(i + 1);
 
-            if (origin.getLongitude() == null || destination.getLongitude() == null) {
+            if (origin.getLongitude() == null || origin.getLatitude() == null ||
+                    destination.getLongitude() == null || destination.getLatitude() == null) {
                 continue;
             }
 

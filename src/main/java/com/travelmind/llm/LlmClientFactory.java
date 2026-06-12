@@ -23,7 +23,7 @@ public class LlmClientFactory {
      * @return LLM 客户端实例
      */
     public LlmClient getClient() {
-        String provider = llmProperties.getProvider().toLowerCase();
+        String provider = llmProperties.getProvider() == null ? "mimo" : llmProperties.getProvider().toLowerCase();
         switch (provider) {
             case "mimo":
                 return mimoLlmClient;

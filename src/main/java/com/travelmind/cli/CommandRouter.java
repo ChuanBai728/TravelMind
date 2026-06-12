@@ -194,8 +194,10 @@ public class CommandRouter {
             if (result != null && result.getMarkdown() != null) {
                 cliRenderer.renderItinerary(result);
 
-                // 更新会话上下文
-                conversationManager.updateContext(currentSessionId, result.getId(), input);
+                // 只有真实保存过的行程才更新当前会话，避免追问/错误提示清空上下文。
+                if (result.getId() != null) {
+                    conversationManager.updateContext(currentSessionId, result.getId(), input);
+                }
             } else {
                 cliRenderer.renderMessage("抱歉，我无法处理你的请求。请尝试描述你的旅行需求。");
             }

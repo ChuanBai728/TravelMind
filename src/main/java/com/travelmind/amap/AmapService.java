@@ -1,7 +1,6 @@
 package com.travelmind.amap;
 
 import com.travelmind.domain.Poi;
-import com.travelmind.domain.RouteInfo;
 
 import java.util.List;
 
@@ -27,14 +26,4 @@ public interface AmapService {
      * @return POI 信息（包含经纬度）
      */
     Poi geocode(String address);
-
-    /**
-     * 估算路线
-     *
-     * @param origin        起点 POI
-     * @param destination   终点 POI
-     * @param transportMode 交通方式
-     * @return 路线信息
-     */
-    RouteInfo estimateRoute(Poi origin, Poi destination, String transportMode);
 }

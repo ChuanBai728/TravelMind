@@ -3,7 +3,6 @@ package com.travelmind.amap;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.travelmind.amap.dto.AmapPoi;
-import com.travelmind.amap.dto.AmapRoute;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -147,63 +146,4 @@ public class AmapClient {
         }
     }
 
-    /**
-     * 路径规划
-     *
-     * @param origin      起点经纬度，格式 "经度,纬度"
-     * @param destination 终点经纬度，格式 "经度,纬度"
-     * @param mode        交通方式：driving, walking, transit
-     * @return 路线信息
-     */
-    public AmapRoute getRoute(String origin, String destination, String mode) {
-        try {
-            String endpoint;
-            switch (mode) {
-                case "walking":
-                    endpoint = "/v3/direction/walking";
-                    break;
-                case "transit":
-                    endpoint = "/v3/direction/transit/integrated";
-                    break;
-                case "driving":
-                default:
-                    endpoint = "/v3/direction/driving";
-                    break;
-            }
-
-            HttpUrl url = HttpUrl.parse(amapProperties.getBaseUrl() + endpoint).newBuilder()
-                    .addQueryParameter("key", amapProperties.getApiKey())
-                    .addQueryParameter("origin", origin)
-                    .addQueryParameter("destination", destination)
-                    .build();
-
-            Request request = new Request.Builder()
-                    .url(url)
-                    .get()
-                    .build();
-
-            log.debug("Getting route: {} -> {} ({})", origin, destination, mode);
-
-            try (Response response = httpClient.newCall(request).execute()) {
-                if (!response.isSuccessful() || response.body() == null) {
-                    log.warn("Amap route failed with status: {}", response.code());
-                    return null;
-                }
-
-                String responseBody = response.body().string();
-                JsonNode root = objectMapper.readTree(responseBody);
-
-                String status = root.path("status").asText();
-                if (!"1".equals(status)) {
-                    log.warn("Amap route returned error: {}", root.path("info").asText());
-                    return null;
-                }
-
-                return objectMapper.treeToValue(root.path("route"), AmapRoute.class);
-            }
-        } catch (IOException e) {
-            log.error("Amap route failed", e);
-            return null;
-        }
-    }
 }

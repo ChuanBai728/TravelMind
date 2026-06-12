@@ -1,8 +1,12 @@
 package com.travelmind.conversation;
 
 import com.travelmind.domain.Itinerary;
+import com.travelmind.domain.TripRequest;
 import com.travelmind.storage.ItineraryRepository;
+import com.travelmind.storage.TripRequestRepository;
 import com.travelmind.storage.TravelSessionRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -19,14 +23,20 @@ public class ConversationManager {
 
     private final TravelSessionRepository travelSessionRepository;
     private final ItineraryRepository itineraryRepository;
+    private final TripRequestRepository tripRequestRepository;
     private final UserMessageClassifier userMessageClassifier;
+    private final ObjectMapper objectMapper;
 
     public ConversationManager(TravelSessionRepository travelSessionRepository,
                                ItineraryRepository itineraryRepository,
-                               UserMessageClassifier userMessageClassifier) {
+                               TripRequestRepository tripRequestRepository,
+                               UserMessageClassifier userMessageClassifier,
+                               ObjectMapper objectMapper) {
         this.travelSessionRepository = travelSessionRepository;
         this.itineraryRepository = itineraryRepository;
+        this.tripRequestRepository = tripRequestRepository;
         this.userMessageClassifier = userMessageClassifier;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -75,6 +85,7 @@ public class ConversationManager {
                     itinerary.setId(itineraryEntity.getId());
                     itinerary.setSessionId(itineraryEntity.getSessionId());
                     itinerary.setMarkdown(itineraryEntity.getMarkdownContent());
+                    itinerary.setRequest(loadTripRequest(itineraryEntity.getRequestId()));
                     context.setCurrentItinerary(itinerary);
                 }
             }
@@ -91,6 +102,11 @@ public class ConversationManager {
      * @param lastUserMessage 最后一条用户消息
      */
     public void updateContext(Long sessionId, Long itineraryId, String lastUserMessage) {
+        if (itineraryId == null) {
+            log.debug("Skip context update for session {} because itineraryId is null", sessionId);
+            return;
+        }
+
         TravelSessionRepository.TravelSession session = travelSessionRepository.findById(sessionId);
         if (session != null) {
             session.setCurrentItineraryId(itineraryId);
@@ -132,5 +148,40 @@ public class ConversationManager {
             session.setCurrentItineraryId(null);
             travelSessionRepository.save(session);
         }
+    }
+
+    private TripRequest loadTripRequest(Long requestId) {
+        if (requestId == null) {
+            return null;
+        }
+
+        TripRequestRepository.TripRequest stored = tripRequestRepository.findById(requestId);
+        if (stored == null) {
+            return null;
+        }
+
+        TripRequest request = new TripRequest();
+        request.setDestination(stored.getDestination());
+        request.setDurationDays(stored.getDurationDays());
+        request.setStartDate(stored.getStartDate());
+        request.setPeopleCount(stored.getPeopleCount());
+        request.setBudgetLevel(stored.getBudgetLevel());
+        request.setPaceLevel(stored.getPaceLevel());
+        request.setTransportMode(stored.getTransportMode());
+        request.setHotelArea(stored.getHotelArea());
+        request.setRawInput(stored.getRawInput());
+
+        if (stored.getPreferencesJson() != null) {
+            try {
+                List<String> preferences = objectMapper.readValue(
+                        stored.getPreferencesJson(),
+                        objectMapper.getTypeFactory().constructCollectionType(List.class, String.class));
+                request.setPreferences(preferences);
+            } catch (JsonProcessingException e) {
+                log.warn("Failed to parse preferences from stored trip request {}", requestId, e);
+            }
+        }
+
+        return request;
     }
 }

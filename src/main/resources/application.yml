@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: travelmind
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:travelmind}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:}
+
+mybatis-plus:
+  mapper-locations: classpath*:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto
+
+travelmind:
+  llm:
+    provider: ${LLM_PROVIDER:mimo}
+    mimo:
+      base-url: ${MIMO_BASE_URL:}
+      chat-path: ${MIMO_CHAT_PATH:/v1/chat/completions}
+      api-key: ${MIMO_API_KEY:}
+      model: ${MIMO_MODEL:}
+      temperature: ${MIMO_TEMPERATURE:0.4}
+      timeout-seconds: ${MIMO_TIMEOUT_SECONDS:60}
+  amap:
+    base-url: ${AMAP_BASE_URL:https://restapi.amap.com}
+    api-key: ${AMAP_API_KEY:}
+    timeout-seconds: ${AMAP_TIMEOUT_SECONDS:20}
+  export:
+    dir: ${EXPORT_DIR:exports}

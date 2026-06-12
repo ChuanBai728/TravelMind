@@ -187,12 +187,19 @@ public class CommandRouter {
         }
 
         try {
-            // 处理用户消息
-            Itinerary result = tripPlannerService.handleUserMessage(currentSessionId, input);
+            // 创建流式回调
+            CliRenderer.StreamingRenderer streamingRenderer = cliRenderer.new StreamingRenderer();
 
-            // 渲染结果
+            // 处理用户消息（流式）
+            Itinerary result = tripPlannerService.handleUserMessageStream(
+                    currentSessionId, input, streamingRenderer);
+
+            // 刷新流式渲染器缓冲区
+            streamingRenderer.flush();
+
+            // 渲染提醒信息
             if (result != null && result.getMarkdown() != null) {
-                cliRenderer.renderItinerary(result);
+                cliRenderer.renderItineraryAfterStream(result);
 
                 // 只有真实保存过的行程才更新当前会话，避免追问/错误提示清空上下文。
                 if (result.getId() != null) {

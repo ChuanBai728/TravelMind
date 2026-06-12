@@ -12,8 +12,6 @@ import java.util.List;
 @Component
 public class RuleValidator {
 
-    // 中文数字映射
-    private static final String[] CN_NUMS = {"零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"};
 
     /**
      * 校验行程
@@ -42,17 +40,7 @@ public class RuleValidator {
             return result;
         }
 
-        // 2. 检查天数完整性（支持多种格式）
-        if (itinerary.getRequest() != null && itinerary.getRequest().getDurationDays() != null) {
-            int days = itinerary.getRequest().getDurationDays();
-            for (int i = 1; i <= days; i++) {
-                if (!containsDay(markdown, i)) {
-                    warnings.add("行程可能缺少第 " + i + " 天的安排");
-                }
-            }
-        }
-
-        // 3. 检查时间段
+        // 2. 检查时间段
         String[] timeSlots = {"上午", "中午", "下午", "晚上", "Morning", "Afternoon", "Evening"};
         int foundSlots = 0;
         for (String slot : timeSlots) {
@@ -73,31 +61,6 @@ public class RuleValidator {
         result.setPassed(warnings.isEmpty());
         result.setWarnings(warnings);
         return result;
-    }
-
-    /**
-     * 检查 Markdown 是否包含某一天的内容
-     * 支持格式：第 1 天、第1天、第一天、Day 1、day1
-     */
-    private boolean containsDay(String markdown, int dayIndex) {
-        String lower = markdown.toLowerCase();
-
-        // 第 1 天 / 第1天
-        if (lower.contains("第 " + dayIndex + " 天") || lower.contains("第" + dayIndex + "天")) {
-            return true;
-        }
-
-        // 第一天、第二天...
-        if (dayIndex <= 10 && lower.contains("第" + CN_NUMS[dayIndex] + "天")) {
-            return true;
-        }
-
-        // Day 1 / day 1 / Day1
-        if (lower.contains("day " + dayIndex) || lower.contains("day" + dayIndex)) {
-            return true;
-        }
-
-        return false;
     }
 
     /**

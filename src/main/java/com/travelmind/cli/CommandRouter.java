@@ -2,7 +2,9 @@ package com.travelmind.cli;
 
 import com.travelmind.conversation.ConversationManager;
 import com.travelmind.domain.Itinerary;
-import com.travelmind.entity.ItineraryEntity;
+import com.travelmind.domain.TripRequest;
+import com.travelmind.storage.ItineraryRepository;
+import com.travelmind.storage.TripRequestRepository;
 import com.travelmind.export.MarkdownExporter;
 import com.travelmind.planner.TripPlannerService;
 import org.slf4j.Logger;
@@ -23,15 +25,18 @@ public class CommandRouter {
     private final TripPlannerService tripPlannerService;
     private final ConversationManager conversationManager;
     private final MarkdownExporter markdownExporter;
+    private final TripRequestRepository tripRequestRepository;
     private final CliRenderer cliRenderer;
 
     private Long currentSessionId;
 
     public CommandRouter(TripPlannerService tripPlannerService, ConversationManager conversationManager,
-                         MarkdownExporter markdownExporter, CliRenderer cliRenderer) {
+                         MarkdownExporter markdownExporter, TripRequestRepository tripRequestRepository,
+                         CliRenderer cliRenderer) {
         this.tripPlannerService = tripPlannerService;
         this.conversationManager = conversationManager;
         this.markdownExporter = markdownExporter;
+        this.tripRequestRepository = tripRequestRepository;
         this.cliRenderer = cliRenderer;
     }
 
@@ -114,17 +119,28 @@ public class CommandRouter {
 
         try {
             // 获取当前行程
-            List<ItineraryEntity> itineraries = conversationManager.getHistoryItineraries(currentSessionId, 1);
+            List<ItineraryRepository.Itinerary> itineraries = conversationManager.getHistoryItineraries(currentSessionId, 1);
             if (itineraries.isEmpty()) {
                 cliRenderer.renderError("当前会话没有行程，请先创建行程。");
                 return;
             }
 
-            ItineraryEntity latestItinerary = itineraries.get(0);
+            ItineraryRepository.Itinerary latestItinerary = itineraries.get(0);
             Itinerary itinerary = new Itinerary();
             itinerary.setId(latestItinerary.getId());
             itinerary.setSessionId(latestItinerary.getSessionId());
             itinerary.setMarkdown(latestItinerary.getMarkdownContent());
+
+            // 恢复 TripRequest 以获取目的地和天数信息
+            if (latestItinerary.getRequestId() != null) {
+                TripRequestRepository.TripRequest requestEntity = tripRequestRepository.findById(latestItinerary.getRequestId());
+                if (requestEntity != null) {
+                    TripRequest request = new TripRequest();
+                    request.setDestination(requestEntity.getDestination());
+                    request.setDurationDays(requestEntity.getDurationDays());
+                    itinerary.setRequest(request);
+                }
+            }
 
             // 导出
             Path exportPath = markdownExporter.export(itinerary);
@@ -142,7 +158,7 @@ public class CommandRouter {
         }
 
         try {
-            List<ItineraryEntity> itineraries = conversationManager.getHistoryItineraries(currentSessionId, 10);
+            List<ItineraryRepository.Itinerary> itineraries = conversationManager.getHistoryItineraries(currentSessionId, 10);
             if (itineraries.isEmpty()) {
                 cliRenderer.renderMessage("当前会话没有历史行程。");
                 return;
@@ -150,7 +166,7 @@ public class CommandRouter {
 
             cliRenderer.renderMessage("=== 历史行程 ===");
             for (int i = 0; i < itineraries.size(); i++) {
-                ItineraryEntity entity = itineraries.get(i);
+                ItineraryRepository.Itinerary entity = itineraries.get(i);
                 cliRenderer.renderMessage(String.format("%d. %s (版本: %d, 创建时间: %s)",
                         i + 1,
                         entity.getTitle(),

@@ -1,23 +1,18 @@
 package com.travelmind.planner.impl;
 
-import com.travelmind.conversation.ConversationManager;
 import com.travelmind.domain.Itinerary;
 import com.travelmind.domain.Poi;
 import com.travelmind.domain.RouteInfo;
 import com.travelmind.domain.TripRequest;
-import com.travelmind.entity.ItineraryEntity;
-import com.travelmind.entity.TripRequestEntity;
-import com.travelmind.entity.TravelSessionEntity;
 import com.travelmind.planner.*;
-import com.travelmind.repository.ItineraryMapper;
-import com.travelmind.repository.TripRequestMapper;
-import com.travelmind.repository.TravelSessionMapper;
+import com.travelmind.storage.ItineraryRepository;
+import com.travelmind.storage.TravelSessionRepository;
+import com.travelmind.storage.TripRequestRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -35,39 +30,37 @@ public class TripPlannerServiceImpl implements TripPlannerService {
     private final CandidatePoiBuilder candidatePoiBuilder;
     private final ItineraryGenerator itineraryGenerator;
     private final RuleValidator ruleValidator;
-    private final ConversationManager conversationManager;
-    private final TravelSessionMapper travelSessionMapper;
-    private final TripRequestMapper tripRequestMapper;
-    private final ItineraryMapper itineraryMapper;
+    private final TravelSessionRepository travelSessionRepository;
+    private final TripRequestRepository tripRequestRepository;
+    private final ItineraryRepository itineraryRepository;
     private final ObjectMapper objectMapper;
 
     public TripPlannerServiceImpl(IntentParser intentParser, TripContextBuilder tripContextBuilder,
                                    CandidatePoiBuilder candidatePoiBuilder, ItineraryGenerator itineraryGenerator,
-                                   RuleValidator ruleValidator, ConversationManager conversationManager,
-                                   TravelSessionMapper travelSessionMapper, TripRequestMapper tripRequestMapper,
-                                   ItineraryMapper itineraryMapper, ObjectMapper objectMapper) {
+                                   RuleValidator ruleValidator,
+                                   TravelSessionRepository travelSessionRepository,
+                                   TripRequestRepository tripRequestRepository,
+                                   ItineraryRepository itineraryRepository, ObjectMapper objectMapper) {
         this.intentParser = intentParser;
         this.tripContextBuilder = tripContextBuilder;
         this.candidatePoiBuilder = candidatePoiBuilder;
         this.itineraryGenerator = itineraryGenerator;
         this.ruleValidator = ruleValidator;
-        this.conversationManager = conversationManager;
-        this.travelSessionMapper = travelSessionMapper;
-        this.tripRequestMapper = tripRequestMapper;
-        this.itineraryMapper = itineraryMapper;
+        this.travelSessionRepository = travelSessionRepository;
+        this.tripRequestRepository = tripRequestRepository;
+        this.itineraryRepository = itineraryRepository;
         this.objectMapper = objectMapper;
     }
 
     @Override
-    @Transactional
     public Itinerary handleUserMessage(Long sessionId, String userInput) {
         // 1. 获取或创建会话上下文
         TripContext context = tripContextBuilder.build(sessionId, userInput, null);
 
         // 获取当前行程
-        TravelSessionEntity session = travelSessionMapper.selectById(sessionId);
+        TravelSessionRepository.TravelSession session = travelSessionRepository.findById(sessionId);
         if (session != null && session.getCurrentItineraryId() != null) {
-            ItineraryEntity itineraryEntity = itineraryMapper.selectById(session.getCurrentItineraryId());
+            ItineraryRepository.Itinerary itineraryEntity = itineraryRepository.findById(session.getCurrentItineraryId());
             if (itineraryEntity != null) {
                 Itinerary currentItinerary = convertToItinerary(itineraryEntity);
                 context.setCurrentItinerary(currentItinerary);
@@ -101,13 +94,12 @@ public class TripPlannerServiceImpl implements TripPlannerService {
         } else {
             Itinerary unknown = new Itinerary();
             unknown.setSessionId(sessionId);
-            unknown.setMarkdown("抱歉，我没有理解你的意思。请尝试描述你的旅行需求，例如："帮我规划去上海的三日旅游的行程"");
+            unknown.setMarkdown("抱歉，我没有理解你的意思。请尝试描述你的旅行需求，例如：\"帮我规划去上海的三日旅游的行程\"");
             return unknown;
         }
     }
 
     @Override
-    @Transactional
     public Itinerary createPlan(Long sessionId, String userInput) {
         // 1. 解析意图
         TripContext tempContext = tripContextBuilder.build(sessionId, userInput, null);
@@ -118,7 +110,7 @@ public class TripPlannerServiceImpl implements TripPlannerService {
                 parsedIntent.getTripRequest().getDurationDays() == null) {
             Itinerary result = new Itinerary();
             result.setSessionId(sessionId);
-            result.setMarkdown("请提供目的地和出行天数，例如："帮我规划去上海的三日旅游的行程"");
+            result.setMarkdown("请提供目的地和出行天数，例如：\"帮我规划去上海的三日旅游的行程\"");
             return result;
         }
 
@@ -134,7 +126,7 @@ public class TripPlannerServiceImpl implements TripPlannerService {
         context.setCandidatePois(candidatePois);
 
         // 5. 估算路线信息
-        List<RouteInfo> routeInfos = estimateRoutes(candidatePois);
+        List<RouteInfo> routeInfos = estimateRoutes(candidatePois, tripRequest.getTransportMode());
         context.setRouteInfos(routeInfos);
 
         // 6. 生成行程
@@ -153,10 +145,9 @@ public class TripPlannerServiceImpl implements TripPlannerService {
     }
 
     @Override
-    @Transactional
     public Itinerary modifyPlan(Long sessionId, String userInput) {
         // 1. 获取当前行程
-        TravelSessionEntity session = travelSessionMapper.selectById(sessionId);
+        TravelSessionRepository.TravelSession session = travelSessionRepository.findById(sessionId);
         if (session == null || session.getCurrentItineraryId() == null) {
             Itinerary result = new Itinerary();
             result.setSessionId(sessionId);
@@ -164,7 +155,7 @@ public class TripPlannerServiceImpl implements TripPlannerService {
             return result;
         }
 
-        ItineraryEntity currentItineraryEntity = itineraryMapper.selectById(session.getCurrentItineraryId());
+        ItineraryRepository.Itinerary currentItineraryEntity = itineraryRepository.findById(session.getCurrentItineraryId());
         if (currentItineraryEntity == null) {
             Itinerary result = new Itinerary();
             result.setSessionId(sessionId);
@@ -172,13 +163,9 @@ public class TripPlannerServiceImpl implements TripPlannerService {
             return result;
         }
 
-        // 2. 解析意图
-        TripContext tempContext = tripContextBuilder.build(sessionId, userInput, null);
-        IntentParser.ParsedIntent parsedIntent = intentParser.parse(userInput, tempContext);
-
-        // 3. 构建上下文
+        // 2. 构建上下文
         TripRequest tripRequest = currentItineraryEntity.getRequestId() != null ?
-                convertToTripRequest(tripRequestMapper.selectById(currentItineraryEntity.getRequestId())) :
+                convertToTripRequest(tripRequestRepository.findById(currentItineraryEntity.getRequestId())) :
                 new TripRequest();
 
         TripContext context = tripContextBuilder.build(sessionId, userInput, tripRequest);
@@ -203,37 +190,58 @@ public class TripPlannerServiceImpl implements TripPlannerService {
         return itinerary;
     }
 
-    private List<RouteInfo> estimateRoutes(List<Poi> pois) {
+    private List<RouteInfo> estimateRoutes(List<Poi> pois, String transportMode) {
         List<RouteInfo> routeInfos = new ArrayList<>();
 
-        // 简单实现：只估算相邻 POI 之间的路线
+        // 直接使用本地估算（避免高德 QPS 超限）
         for (int i = 0; i < pois.size() - 1; i++) {
             Poi origin = pois.get(i);
             Poi destination = pois.get(i + 1);
 
-            if (origin.getLongitude() != null && destination.getLongitude() != null) {
-                try {
-                    RouteInfo routeInfo = new RouteInfo();
-                    routeInfo.setOriginName(origin.getName());
-                    routeInfo.setDestinationName(destination.getName());
-                    routeInfo.setTransportMode("公共交通+步行");
-
-                    // 简单估算：假设平均速度 30km/h
-                    double distance = calculateDistance(
-                            origin.getLatitude().doubleValue(), origin.getLongitude().doubleValue(),
-                            destination.getLatitude().doubleValue(), destination.getLongitude().doubleValue());
-
-                    routeInfo.setDistanceMeters((int) (distance * 1000));
-                    routeInfo.setDurationMinutes((int) (distance / 30 * 60)); // 假设 30km/h
-
-                    routeInfos.add(routeInfo);
-                } catch (Exception e) {
-                    log.warn("Failed to estimate route between {} and {}", origin.getName(), destination.getName());
-                }
+            if (origin.getLongitude() == null || destination.getLongitude() == null) {
+                continue;
             }
+
+            RouteInfo routeInfo = estimateRouteLocally(origin, destination, transportMode);
+            routeInfos.add(routeInfo);
         }
 
         return routeInfos;
+    }
+
+    private RouteInfo estimateRouteLocally(Poi origin, Poi destination, String transportMode) {
+        RouteInfo routeInfo = new RouteInfo();
+        routeInfo.setOriginName(origin.getName());
+        routeInfo.setDestinationName(destination.getName());
+        routeInfo.setTransportMode(transportMode);
+
+        // Haversine 公式计算直线距离
+        double distance = calculateDistance(
+                origin.getLatitude().doubleValue(), origin.getLongitude().doubleValue(),
+                destination.getLatitude().doubleValue(), destination.getLongitude().doubleValue());
+
+        // 根据交通方式估算时间
+        double avgSpeedKmh;
+        switch (transportMode) {
+            case "步行":
+                avgSpeedKmh = 5;
+                break;
+            case "自驾":
+                avgSpeedKmh = 40;
+                break;
+            case "公共交通":
+            case "公共交通+步行":
+            default:
+                avgSpeedKmh = 25;
+                break;
+        }
+
+        // 实际路线距离约为直线距离的 1.3 倍
+        double actualDistance = distance * 1.3;
+        routeInfo.setDistanceMeters((int) (actualDistance * 1000));
+        routeInfo.setDurationMinutes((int) (actualDistance / avgSpeedKmh * 60));
+
+        return routeInfo;
     }
 
     private double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
@@ -251,7 +259,7 @@ public class TripPlannerServiceImpl implements TripPlannerService {
     private void saveTripData(Long sessionId, TripRequest tripRequest, Itinerary itinerary) {
         try {
             // 保存 TripRequest
-            TripRequestEntity requestEntity = new TripRequestEntity();
+            TripRequestRepository.TripRequest requestEntity = new TripRequestRepository.TripRequest();
             requestEntity.setSessionId(sessionId);
             requestEntity.setRawInput(tripRequest.getRawInput());
             requestEntity.setDestination(tripRequest.getDestination());
@@ -263,10 +271,10 @@ public class TripPlannerServiceImpl implements TripPlannerService {
             requestEntity.setTransportMode(tripRequest.getTransportMode());
             requestEntity.setPreferencesJson(objectMapper.writeValueAsString(tripRequest.getPreferences()));
             requestEntity.setHotelArea(tripRequest.getHotelArea());
-            tripRequestMapper.insert(requestEntity);
+            tripRequestRepository.save(requestEntity);
 
             // 保存 Itinerary
-            ItineraryEntity itineraryEntity = new ItineraryEntity();
+            ItineraryRepository.Itinerary itineraryEntity = new ItineraryRepository.Itinerary();
             itineraryEntity.setSessionId(sessionId);
             itineraryEntity.setRequestId(requestEntity.getId());
             itineraryEntity.setVersion(1);
@@ -274,21 +282,18 @@ public class TripPlannerServiceImpl implements TripPlannerService {
             itineraryEntity.setItineraryJson(objectMapper.writeValueAsString(itinerary));
             itineraryEntity.setMarkdownContent(itinerary.getMarkdown());
             itineraryEntity.setValidationStatus("PASSED");
-            itineraryMapper.insert(itineraryEntity);
+            itineraryRepository.save(itineraryEntity);
 
             // 更新 TravelSession
-            TravelSessionEntity session = travelSessionMapper.selectById(sessionId);
+            TravelSessionRepository.TravelSession session = travelSessionRepository.findById(sessionId);
             if (session == null) {
-                session = new TravelSessionEntity();
+                session = new TravelSessionRepository.TravelSession();
                 session.setId(sessionId);
                 session.setSessionName("会话-" + sessionId);
                 session.setStatus("ACTIVE");
-                session.setCurrentItineraryId(itineraryEntity.getId());
-                travelSessionMapper.insert(session);
-            } else {
-                session.setCurrentItineraryId(itineraryEntity.getId());
-                travelSessionMapper.updateById(session);
             }
+            session.setCurrentItineraryId(itineraryEntity.getId());
+            travelSessionRepository.save(session);
 
             itinerary.setId(itineraryEntity.getId());
         } catch (JsonProcessingException e) {
@@ -300,7 +305,7 @@ public class TripPlannerServiceImpl implements TripPlannerService {
     private void saveModifiedTripData(Long sessionId, TripRequest tripRequest, Itinerary itinerary, int version) {
         try {
             // 保存 TripRequest
-            TripRequestEntity requestEntity = new TripRequestEntity();
+            TripRequestRepository.TripRequest requestEntity = new TripRequestRepository.TripRequest();
             requestEntity.setSessionId(sessionId);
             requestEntity.setRawInput(tripRequest.getRawInput());
             requestEntity.setDestination(tripRequest.getDestination());
@@ -312,10 +317,10 @@ public class TripPlannerServiceImpl implements TripPlannerService {
             requestEntity.setTransportMode(tripRequest.getTransportMode());
             requestEntity.setPreferencesJson(objectMapper.writeValueAsString(tripRequest.getPreferences()));
             requestEntity.setHotelArea(tripRequest.getHotelArea());
-            tripRequestMapper.insert(requestEntity);
+            tripRequestRepository.save(requestEntity);
 
             // 保存 Itinerary
-            ItineraryEntity itineraryEntity = new ItineraryEntity();
+            ItineraryRepository.Itinerary itineraryEntity = new ItineraryRepository.Itinerary();
             itineraryEntity.setSessionId(sessionId);
             itineraryEntity.setRequestId(requestEntity.getId());
             itineraryEntity.setVersion(version);
@@ -323,13 +328,13 @@ public class TripPlannerServiceImpl implements TripPlannerService {
             itineraryEntity.setItineraryJson(objectMapper.writeValueAsString(itinerary));
             itineraryEntity.setMarkdownContent(itinerary.getMarkdown());
             itineraryEntity.setValidationStatus("PASSED");
-            itineraryMapper.insert(itineraryEntity);
+            itineraryRepository.save(itineraryEntity);
 
             // 更新 TravelSession
-            TravelSessionEntity session = travelSessionMapper.selectById(sessionId);
+            TravelSessionRepository.TravelSession session = travelSessionRepository.findById(sessionId);
             if (session != null) {
                 session.setCurrentItineraryId(itineraryEntity.getId());
-                travelSessionMapper.updateById(session);
+                travelSessionRepository.save(session);
             }
 
             itinerary.setId(itineraryEntity.getId());
@@ -339,7 +344,7 @@ public class TripPlannerServiceImpl implements TripPlannerService {
         }
     }
 
-    private Itinerary convertToItinerary(ItineraryEntity entity) {
+    private Itinerary convertToItinerary(ItineraryRepository.Itinerary entity) {
         if (entity == null) {
             return null;
         }
@@ -348,6 +353,14 @@ public class TripPlannerServiceImpl implements TripPlannerService {
         itinerary.setId(entity.getId());
         itinerary.setSessionId(entity.getSessionId());
         itinerary.setMarkdown(entity.getMarkdownContent());
+
+        // 恢复 TripRequest
+        if (entity.getRequestId() != null) {
+            TripRequestRepository.TripRequest requestEntity = tripRequestRepository.findById(entity.getRequestId());
+            if (requestEntity != null) {
+                itinerary.setRequest(convertToTripRequest(requestEntity));
+            }
+        }
 
         try {
             if (entity.getItineraryJson() != null) {
@@ -364,7 +377,7 @@ public class TripPlannerServiceImpl implements TripPlannerService {
         return itinerary;
     }
 
-    private TripRequest convertToTripRequest(TripRequestEntity entity) {
+    private TripRequest convertToTripRequest(TripRequestRepository.TripRequest entity) {
         if (entity == null) {
             return null;
         }

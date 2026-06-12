@@ -1,15 +1,12 @@
 package com.travelmind.conversation;
 
 import com.travelmind.domain.Itinerary;
-import com.travelmind.entity.ItineraryEntity;
-import com.travelmind.entity.TravelSessionEntity;
-import com.travelmind.repository.ItineraryMapper;
-import com.travelmind.repository.TravelSessionMapper;
+import com.travelmind.storage.ItineraryRepository;
+import com.travelmind.storage.TravelSessionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -20,14 +17,15 @@ public class ConversationManager {
 
     private static final Logger log = LoggerFactory.getLogger(ConversationManager.class);
 
-    private final TravelSessionMapper travelSessionMapper;
-    private final ItineraryMapper itineraryMapper;
+    private final TravelSessionRepository travelSessionRepository;
+    private final ItineraryRepository itineraryRepository;
     private final UserMessageClassifier userMessageClassifier;
 
-    public ConversationManager(TravelSessionMapper travelSessionMapper, ItineraryMapper itineraryMapper,
+    public ConversationManager(TravelSessionRepository travelSessionRepository,
+                               ItineraryRepository itineraryRepository,
                                UserMessageClassifier userMessageClassifier) {
-        this.travelSessionMapper = travelSessionMapper;
-        this.itineraryMapper = itineraryMapper;
+        this.travelSessionRepository = travelSessionRepository;
+        this.itineraryRepository = itineraryRepository;
         this.userMessageClassifier = userMessageClassifier;
     }
 
@@ -37,12 +35,10 @@ public class ConversationManager {
      * @return 会话 ID
      */
     public Long createSession() {
-        TravelSessionEntity session = new TravelSessionEntity();
+        TravelSessionRepository.TravelSession session = new TravelSessionRepository.TravelSession();
         session.setSessionName("会话-" + System.currentTimeMillis());
         session.setStatus("ACTIVE");
-        session.setCreatedAt(LocalDateTime.now());
-        session.setUpdatedAt(LocalDateTime.now());
-        travelSessionMapper.insert(session);
+        travelSessionRepository.save(session);
 
         log.info("Created new session: {}", session.getId());
         return session.getId();
@@ -52,10 +48,10 @@ public class ConversationManager {
      * 获取会话
      *
      * @param sessionId 会话 ID
-     * @return 会话实体
+     * @return 会话
      */
-    public TravelSessionEntity getSession(Long sessionId) {
-        return travelSessionMapper.selectById(sessionId);
+    public TravelSessionRepository.TravelSession getSession(Long sessionId) {
+        return travelSessionRepository.findById(sessionId);
     }
 
     /**
@@ -68,12 +64,12 @@ public class ConversationManager {
         ConversationContext context = new ConversationContext();
         context.setSessionId(sessionId);
 
-        TravelSessionEntity session = travelSessionMapper.selectById(sessionId);
+        TravelSessionRepository.TravelSession session = travelSessionRepository.findById(sessionId);
         if (session != null) {
             context.setCurrentItineraryId(session.getCurrentItineraryId());
 
             if (session.getCurrentItineraryId() != null) {
-                ItineraryEntity itineraryEntity = itineraryMapper.selectById(session.getCurrentItineraryId());
+                ItineraryRepository.Itinerary itineraryEntity = itineraryRepository.findById(session.getCurrentItineraryId());
                 if (itineraryEntity != null) {
                     Itinerary itinerary = new Itinerary();
                     itinerary.setId(itineraryEntity.getId());
@@ -90,16 +86,15 @@ public class ConversationManager {
     /**
      * 更新会话上下文
      *
-     * @param sessionId     会话 ID
-     * @param itineraryId   行程 ID
+     * @param sessionId       会话 ID
+     * @param itineraryId     行程 ID
      * @param lastUserMessage 最后一条用户消息
      */
     public void updateContext(Long sessionId, Long itineraryId, String lastUserMessage) {
-        TravelSessionEntity session = travelSessionMapper.selectById(sessionId);
+        TravelSessionRepository.TravelSession session = travelSessionRepository.findById(sessionId);
         if (session != null) {
             session.setCurrentItineraryId(itineraryId);
-            session.setUpdatedAt(LocalDateTime.now());
-            travelSessionMapper.updateById(session);
+            travelSessionRepository.save(session);
         }
     }
 
@@ -120,13 +115,10 @@ public class ConversationManager {
      * @param limit     返回数量限制
      * @return 行程列表
      */
-    public List<ItineraryEntity> getHistoryItineraries(Long sessionId, int limit) {
-        return itineraryMapper.selectList(
-                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<ItineraryEntity>()
-                        .eq(ItineraryEntity::getSessionId, sessionId)
-                        .orderByDesc(ItineraryEntity::getCreatedAt)
-                        .last("LIMIT " + limit)
-        );
+    public List<ItineraryRepository.Itinerary> getHistoryItineraries(Long sessionId, int limit) {
+        return itineraryRepository.findBySessionId(sessionId).stream()
+                .limit(limit)
+                .toList();
     }
 
     /**
@@ -135,11 +127,10 @@ public class ConversationManager {
      * @param sessionId 会话 ID
      */
     public void clearContext(Long sessionId) {
-        TravelSessionEntity session = travelSessionMapper.selectById(sessionId);
+        TravelSessionRepository.TravelSession session = travelSessionRepository.findById(sessionId);
         if (session != null) {
             session.setCurrentItineraryId(null);
-            session.setUpdatedAt(LocalDateTime.now());
-            travelSessionMapper.updateById(session);
+            travelSessionRepository.save(session);
         }
     }
 }

@@ -2,14 +2,12 @@ package com.travelmind.amap.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import lombok.Data;
 
 import java.util.List;
 
 /**
  * 高德地图路线数据
  */
-@Data
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class AmapRoute {
 
@@ -19,16 +17,16 @@ public class AmapRoute {
     @JsonProperty("destination")
     private String destination;
 
-    @JsonProperty("origin_id")
-    private String originId;
-
-    @JsonProperty("destination_id")
-    private String destinationId;
-
     @JsonProperty("paths")
     private List<Path> paths;
 
-    @Data
+    public String getOrigin() { return origin; }
+    public void setOrigin(String origin) { this.origin = origin; }
+    public String getDestination() { return destination; }
+    public void setDestination(String destination) { this.destination = destination; }
+    public List<Path> getPaths() { return paths; }
+    public void setPaths(List<Path> paths) { this.paths = paths; }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Path {
         @JsonProperty("distance")
@@ -37,14 +35,17 @@ public class AmapRoute {
         @JsonProperty("duration")
         private String duration;
 
-        @JsonProperty("strategy")
-        private String strategy;
-
         @JsonProperty("steps")
         private List<Step> steps;
+
+        public String getDistance() { return distance; }
+        public void setDistance(String distance) { this.distance = distance; }
+        public String getDuration() { return duration; }
+        public void setDuration(String duration) { this.duration = duration; }
+        public List<Step> getSteps() { return steps; }
+        public void setSteps(List<Step> steps) { this.steps = steps; }
     }
 
-    @Data
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Step {
         @JsonProperty("instruction")
@@ -59,13 +60,13 @@ public class AmapRoute {
         @JsonProperty("duration")
         private String duration;
 
-        @JsonProperty("polyline")
-        private String polyline;
-
-        @JsonProperty("action")
-        private String action;
-
-        @JsonProperty("assistant_action")
-        private String assistantAction;
+        public String getInstruction() { return instruction; }
+        public void setInstruction(String instruction) { this.instruction = instruction; }
+        public String getRoad() { return road; }
+        public void setRoad(String road) { this.road = road; }
+        public String getDistance() { return distance; }
+        public void setDistance(String distance) { this.distance = distance; }
+        public String getDuration() { return duration; }
+        public void setDuration(String duration) { this.duration = duration; }
     }
 }

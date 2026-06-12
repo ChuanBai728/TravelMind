@@ -1,22 +1,17 @@
 package com.travelmind.planner;
 
 import com.travelmind.domain.Itinerary;
-import com.travelmind.domain.Poi;
-import com.travelmind.domain.RouteInfo;
 import com.travelmind.domain.TripRequest;
 import com.travelmind.llm.LlmClient;
 import com.travelmind.llm.LlmClientFactory;
 import com.travelmind.llm.LlmRequest;
 import com.travelmind.llm.LlmResponse;
 import com.travelmind.llm.PromptTemplates;
-import com.travelmind.entity.LlmCallLogEntity;
-import com.travelmind.repository.LlmCallLogMapper;
+import com.travelmind.storage.LlmCallLogRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
-
-import java.util.List;
 
 /**
  * 行程生成器
@@ -28,13 +23,13 @@ public class ItineraryGenerator {
 
     private final LlmClientFactory llmClientFactory;
     private final ObjectMapper objectMapper;
-    private final LlmCallLogMapper llmCallLogMapper;
+    private final LlmCallLogRepository llmCallLogRepository;
 
     public ItineraryGenerator(LlmClientFactory llmClientFactory, ObjectMapper objectMapper,
-                              LlmCallLogMapper llmCallLogMapper) {
+                              LlmCallLogRepository llmCallLogRepository) {
         this.llmClientFactory = llmClientFactory;
         this.objectMapper = objectMapper;
-        this.llmCallLogMapper = llmCallLogMapper;
+        this.llmCallLogRepository = llmCallLogRepository;
     }
 
     /**
@@ -103,9 +98,9 @@ public class ItineraryGenerator {
     /**
      * 修改行程
      *
-     * @param context       规划上下文
+     * @param context         规划上下文
      * @param currentMarkdown 当前行程 Markdown
-     * @param userInput     用户修改要求
+     * @param userInput       用户修改要求
      * @return 修改后的行程
      */
     public Itinerary modify(TripContext context, String currentMarkdown, String userInput) {
@@ -162,22 +157,22 @@ public class ItineraryGenerator {
     private void saveCallLog(LlmRequest request, LlmResponse response, String status,
                              String errorMessage, long latencyMs, Long sessionId) {
         try {
-            LlmCallLogEntity logEntity = new LlmCallLogEntity();
-            logEntity.setSessionId(sessionId);
-            logEntity.setProvider("mimo");
-            logEntity.setModel(llmClientFactory.getClient().getModelName());
-            logEntity.setCallType(request.getCallType());
-            logEntity.setLatencyMs((int) latencyMs);
-            logEntity.setStatus(status);
-            logEntity.setErrorMessage(errorMessage);
+            LlmCallLogRepository.LlmCallLog logEntry = new LlmCallLogRepository.LlmCallLog();
+            logEntry.setSessionId(sessionId);
+            logEntry.setProvider("mimo");
+            logEntry.setModel(llmClientFactory.getClient().getModelName());
+            logEntry.setCallType(request.getCallType());
+            logEntry.setLatencyMs((int) latencyMs);
+            logEntry.setStatus(status);
+            logEntry.setErrorMessage(errorMessage);
 
             if (response != null) {
-                logEntity.setPromptTokens(response.getPromptTokens());
-                logEntity.setCompletionTokens(response.getCompletionTokens());
-                logEntity.setResponseJson(response.getRawResponse());
+                logEntry.setPromptTokens(response.getPromptTokens());
+                logEntry.setCompletionTokens(response.getCompletionTokens());
+                logEntry.setResponseJson(response.getRawResponse());
             }
 
-            llmCallLogMapper.insert(logEntity);
+            llmCallLogRepository.save(logEntry);
         } catch (Exception e) {
             log.warn("Failed to save LLM call log", e);
         }

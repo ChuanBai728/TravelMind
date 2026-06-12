@@ -8,12 +8,14 @@ import org.jline.terminal.TerminalBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
  * TravelMind 命令行 Shell
  */
 @Component
+@ConditionalOnProperty(name = "travelmind.cli.enabled", havingValue = "true", matchIfMissing = true)
 public class TravelMindShell implements CommandLineRunner {
 
     private static final Logger log = LoggerFactory.getLogger(TravelMindShell.class);
@@ -28,6 +30,11 @@ public class TravelMindShell implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
+        // 设置控制台编码为 UTF-8
+        try {
+            System.setOut(new java.io.PrintStream(System.out, true, "UTF-8"));
+        } catch (Exception ignored) {}
+
         cliRenderer.renderWelcome();
 
         try {

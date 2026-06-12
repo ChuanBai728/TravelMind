@@ -10,8 +10,7 @@ import com.travelmind.llm.LlmResponse;
 import com.travelmind.llm.PromptTemplates;
 import com.travelmind.planner.IntentParser;
 import com.travelmind.planner.TripContext;
-import com.travelmind.repository.LlmCallLogMapper;
-import com.travelmind.entity.LlmCallLogEntity;
+import com.travelmind.storage.LlmCallLogRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -31,13 +30,13 @@ public class IntentParserImpl implements IntentParser {
 
     private final LlmClientFactory llmClientFactory;
     private final ObjectMapper objectMapper;
-    private final LlmCallLogMapper llmCallLogMapper;
+    private final LlmCallLogRepository llmCallLogRepository;
 
     public IntentParserImpl(LlmClientFactory llmClientFactory, ObjectMapper objectMapper,
-                            LlmCallLogMapper llmCallLogMapper) {
+                            LlmCallLogRepository llmCallLogRepository) {
         this.llmClientFactory = llmClientFactory;
         this.objectMapper = objectMapper;
-        this.llmCallLogMapper = llmCallLogMapper;
+        this.llmCallLogRepository = llmCallLogRepository;
     }
 
     @Override
@@ -202,22 +201,22 @@ public class IntentParserImpl implements IntentParser {
     private void saveCallLog(LlmRequest request, LlmResponse response, String status,
                              String errorMessage, long latencyMs, Long sessionId) {
         try {
-            LlmCallLogEntity logEntity = new LlmCallLogEntity();
-            logEntity.setSessionId(sessionId);
-            logEntity.setProvider("mimo");
-            logEntity.setModel(llmClientFactory.getClient().getModelName());
-            logEntity.setCallType(request.getCallType());
-            logEntity.setLatencyMs((int) latencyMs);
-            logEntity.setStatus(status);
-            logEntity.setErrorMessage(errorMessage);
+            LlmCallLogRepository.LlmCallLog logEntry = new LlmCallLogRepository.LlmCallLog();
+            logEntry.setSessionId(sessionId);
+            logEntry.setProvider("mimo");
+            logEntry.setModel(llmClientFactory.getClient().getModelName());
+            logEntry.setCallType(request.getCallType());
+            logEntry.setLatencyMs((int) latencyMs);
+            logEntry.setStatus(status);
+            logEntry.setErrorMessage(errorMessage);
 
             if (response != null) {
-                logEntity.setPromptTokens(response.getPromptTokens());
-                logEntity.setCompletionTokens(response.getCompletionTokens());
-                logEntity.setResponseJson(response.getRawResponse());
+                logEntry.setPromptTokens(response.getPromptTokens());
+                logEntry.setCompletionTokens(response.getCompletionTokens());
+                logEntry.setResponseJson(response.getRawResponse());
             }
 
-            llmCallLogMapper.insert(logEntity);
+            llmCallLogRepository.save(logEntry);
         } catch (Exception e) {
             log.warn("Failed to save LLM call log", e);
         }

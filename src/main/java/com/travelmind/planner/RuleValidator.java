@@ -5,14 +5,15 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * 规则校验器，对行程进行基础兜底校验
  */
 @Component
 public class RuleValidator {
+
+    // 中文数字映射
+    private static final String[] CN_NUMS = {"零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"};
 
     /**
      * 校验行程
@@ -41,96 +42,78 @@ public class RuleValidator {
             return result;
         }
 
-        // 2. 必须包含"第 1 天"
-        if (!markdown.contains("第 1 天")) {
-            warnings.add("行程缺少第 1 天的安排");
-        }
-
-        // 3. 检查天数完整性
+        // 2. 检查天数完整性（支持多种格式）
         if (itinerary.getRequest() != null && itinerary.getRequest().getDurationDays() != null) {
             int days = itinerary.getRequest().getDurationDays();
             for (int i = 1; i <= days; i++) {
-                if (!markdown.contains("第 " + i + " 天")) {
-                    warnings.add("行程缺少第 " + i + " 天的安排");
+                if (!containsDay(markdown, i)) {
+                    warnings.add("行程可能缺少第 " + i + " 天的安排");
                 }
             }
         }
 
-        // 4. 检查时间段
-        String[] timeSlots = {"上午", "中午", "下午", "晚上"};
+        // 3. 检查时间段
+        String[] timeSlots = {"上午", "中午", "下午", "晚上", "Morning", "Afternoon", "Evening"};
+        int foundSlots = 0;
         for (String slot : timeSlots) {
-            if (!markdown.contains(slot)) {
-                warnings.add("行程可能缺少" + slot + "的安排");
+            if (markdown.contains(slot)) {
+                foundSlots++;
             }
         }
-
-        // 5. 检查是否有注意事项
-        if (!markdown.contains("注意事项") && !markdown.contains("提醒")) {
-            warnings.add("行程缺少注意事项或提醒");
+        if (foundSlots < 2) {
+            warnings.add("行程可能缺少时间段安排（上午/下午/晚上）");
         }
 
-        // 6. 检查每天活动数量
-        checkDailyActivities(markdown, warnings);
+        // 4. 检查是否有注意事项
+        if (!markdown.contains("注意事项") && !markdown.contains("提醒") &&
+                !markdown.contains("Tips") && !markdown.contains("注意")) {
+            warnings.add("行程缺少注意事项或提醒");
+        }
 
         result.setPassed(warnings.isEmpty());
         result.setWarnings(warnings);
         return result;
     }
 
-    private void checkDailyActivities(String markdown, List<String> warnings) {
-        // 简单检查：如果某一天出现超过 6 个列表项，添加提醒
-        Pattern dayPattern = Pattern.compile("第 \\d+ 天[：:].*?(?=第 \\d+ 天|$)", Pattern.DOTALL);
-        Matcher matcher = dayPattern.matcher(markdown);
+    /**
+     * 检查 Markdown 是否包含某一天的内容
+     * 支持格式：第 1 天、第1天、第一天、Day 1、day1
+     */
+    private boolean containsDay(String markdown, int dayIndex) {
+        String lower = markdown.toLowerCase();
 
-        while (matcher.find()) {
-            String dayContent = matcher.group();
-            long listItemCount = dayContent.lines()
-                    .filter(line -> line.trim().startsWith("- ") || line.trim().startsWith("* "))
-                    .count();
-
-            if (listItemCount > 6) {
-                // 提取天数
-                Pattern dayIndexPattern = Pattern.compile("第 (\\d+) 天");
-                Matcher dayIndexMatcher = dayIndexPattern.matcher(dayContent);
-                if (dayIndexMatcher.find()) {
-                    warnings.add("第 " + dayIndexMatcher.group(1) + " 天安排可能偏满，建议适当精简");
-                }
-            }
+        // 第 1 天 / 第1天
+        if (lower.contains("第 " + dayIndex + " 天") || lower.contains("第" + dayIndex + "天")) {
+            return true;
         }
+
+        // 第一天、第二天...
+        if (dayIndex <= 10 && lower.contains("第" + CN_NUMS[dayIndex] + "天")) {
+            return true;
+        }
+
+        // Day 1 / day 1 / Day1
+        if (lower.contains("day " + dayIndex) || lower.contains("day" + dayIndex)) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
      * 校验结果
      */
     public static class ValidationResult {
-        /**
-         * 是否通过
-         */
         private boolean passed;
-
-        /**
-         * 警告信息列表
-         */
         private List<String> warnings;
 
         public ValidationResult() {
             this.warnings = new ArrayList<>();
         }
 
-        public boolean isPassed() {
-            return passed;
-        }
-
-        public void setPassed(boolean passed) {
-            this.passed = passed;
-        }
-
-        public List<String> getWarnings() {
-            return warnings;
-        }
-
-        public void setWarnings(List<String> warnings) {
-            this.warnings = warnings;
-        }
+        public boolean isPassed() { return passed; }
+        public void setPassed(boolean passed) { this.passed = passed; }
+        public List<String> getWarnings() { return warnings; }
+        public void setWarnings(List<String> warnings) { this.warnings = warnings; }
     }
 }

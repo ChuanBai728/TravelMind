@@ -3,9 +3,7 @@ package com.travelmind.planner;
 import com.travelmind.amap.AmapService;
 import com.travelmind.domain.Poi;
 import com.travelmind.domain.TripRequest;
-import com.travelmind.entity.PoiCacheEntity;
-import com.travelmind.repository.PoiCacheMapper;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.travelmind.storage.PoiCacheRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,23 +22,23 @@ public class CandidatePoiBuilder {
     private static final Logger log = LoggerFactory.getLogger(CandidatePoiBuilder.class);
 
     /**
-     * 默认搜索关键词
+     * 默认搜索关键词（精简）
      */
-    private static final List<String> DEFAULT_KEYWORDS = List.of("景点", "美食", "博物馆", "步行街", "夜景");
+    private static final List<String> DEFAULT_KEYWORDS = List.of("景点", "美食");
 
     /**
      * 每个关键词搜索数量限制
      */
-    private static final int SEARCH_LIMIT = 10;
+    private static final int SEARCH_LIMIT = 5;
 
     private final AmapService amapService;
-    private final PoiCacheMapper poiCacheMapper;
+    private final PoiCacheRepository poiCacheRepository;
     private final ObjectMapper objectMapper;
 
-    public CandidatePoiBuilder(AmapService amapService, PoiCacheMapper poiCacheMapper,
+    public CandidatePoiBuilder(AmapService amapService, PoiCacheRepository poiCacheRepository,
                                 ObjectMapper objectMapper) {
         this.amapService = amapService;
-        this.poiCacheMapper = poiCacheMapper;
+        this.poiCacheRepository = poiCacheRepository;
         this.objectMapper = objectMapper;
     }
 
@@ -65,16 +63,19 @@ public class CandidatePoiBuilder {
         // 2. 根据偏好确定搜索关键词
         List<String> keywords = buildKeywords(tripRequest);
 
-        // 3. 调用高德地图 API 搜索
-        for (String keyword : keywords) {
+        // 3. 调用高德地图 API 搜索（加延时避免 QPS 超限）
+        for (int i = 0; i < keywords.size(); i++) {
+            if (i > 0) {
+                try { Thread.sleep(200); } catch (InterruptedException ignored) {}
+            }
             try {
-                List<Poi> pois = amapService.searchPois(city, keyword, SEARCH_LIMIT);
+                List<Poi> pois = amapService.searchPois(city, keywords.get(i), SEARCH_LIMIT);
                 allPois.addAll(pois);
 
                 // 保存到缓存
                 saveToCache(pois);
             } catch (Exception e) {
-                log.warn("Failed to search POIs for keyword: {}", keyword, e);
+                log.warn("Failed to search POIs for keyword: {}", keywords.get(i), e);
             }
         }
 
@@ -98,11 +99,8 @@ public class CandidatePoiBuilder {
 
     private List<Poi> searchFromCache(String city) {
         try {
-            LambdaQueryWrapper<PoiCacheEntity> wrapper = new LambdaQueryWrapper<>();
-            wrapper.eq(PoiCacheEntity::getCity, city);
-            List<PoiCacheEntity> entities = poiCacheMapper.selectList(wrapper);
-
-            return entities.stream()
+            List<PoiCacheRepository.PoiCache> cachedPois = poiCacheRepository.findByCity(city);
+            return cachedPois.stream()
                     .map(this::convertFromCache)
                     .filter(poi -> poi != null)
                     .collect(Collectors.toList());
@@ -112,22 +110,22 @@ public class CandidatePoiBuilder {
         }
     }
 
-    private Poi convertFromCache(PoiCacheEntity entity) {
+    private Poi convertFromCache(PoiCacheRepository.PoiCache cache) {
         try {
-            if (entity == null) {
+            if (cache == null) {
                 return null;
             }
 
             Poi poi = new Poi();
-            poi.setSource(entity.getSource());
-            poi.setSourceId(entity.getSourcePoiId());
-            poi.setName(entity.getName());
-            poi.setCity(entity.getCity());
-            poi.setAddress(entity.getAddress());
-            poi.setCategory(entity.getCategory());
+            poi.setSource(cache.getSource());
+            poi.setSourceId(cache.getSourcePoiId());
+            poi.setName(cache.getName());
+            poi.setCity(cache.getCity());
+            poi.setAddress(cache.getAddress());
+            poi.setCategory(cache.getCategory());
 
             // 解析经纬度
-            String location = entity.getLocation();
+            String location = cache.getLocation();
             if (location != null && location.contains(",")) {
                 String[] parts = location.split(",");
                 if (parts.length == 2) {
@@ -147,29 +145,26 @@ public class CandidatePoiBuilder {
         for (Poi poi : pois) {
             try {
                 // 检查是否已存在
-                LambdaQueryWrapper<PoiCacheEntity> wrapper = new LambdaQueryWrapper<>();
-                wrapper.eq(PoiCacheEntity::getSource, poi.getSource())
-                        .eq(PoiCacheEntity::getSourcePoiId, poi.getSourceId());
-                Long count = poiCacheMapper.selectCount(wrapper);
-
-                if (count > 0) {
+                PoiCacheRepository.PoiCache existing = poiCacheRepository.findBySourceAndPoiId(
+                        poi.getSource(), poi.getSourceId());
+                if (existing != null) {
                     continue;
                 }
 
-                PoiCacheEntity entity = new PoiCacheEntity();
-                entity.setSource(poi.getSource());
-                entity.setSourcePoiId(poi.getSourceId());
-                entity.setName(poi.getName());
-                entity.setCity(poi.getCity());
-                entity.setAddress(poi.getAddress());
-                entity.setCategory(poi.getCategory());
+                PoiCacheRepository.PoiCache cache = new PoiCacheRepository.PoiCache();
+                cache.setSource(poi.getSource());
+                cache.setSourcePoiId(poi.getSourceId());
+                cache.setName(poi.getName());
+                cache.setCity(poi.getCity());
+                cache.setAddress(poi.getAddress());
+                cache.setCategory(poi.getCategory());
 
                 if (poi.getLongitude() != null && poi.getLatitude() != null) {
-                    entity.setLocation(poi.getLongitude() + "," + poi.getLatitude());
+                    cache.setLocation(poi.getLongitude() + "," + poi.getLatitude());
                 }
 
-                entity.setRawJson(objectMapper.writeValueAsString(poi));
-                poiCacheMapper.insert(entity);
+                cache.setRawJson(objectMapper.writeValueAsString(poi));
+                poiCacheRepository.save(cache);
             } catch (Exception e) {
                 log.warn("Failed to save POI to cache: {}", poi.getName(), e);
             }

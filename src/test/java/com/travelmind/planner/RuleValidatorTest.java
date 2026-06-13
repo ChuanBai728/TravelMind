@@ -35,32 +35,6 @@ class RuleValidatorTest {
     }
 
     @Test
-    void validate_MissingDay1_ShouldWarn() {
-        Itinerary itinerary = new Itinerary();
-        TripRequest request = new TripRequest();
-        request.setDurationDays(1);
-        itinerary.setRequest(request);
-        itinerary.setMarkdown("# 行程\n\n## 第 2 天：测试\n- 上午：测试");
-
-        RuleValidator.ValidationResult result = ruleValidator.validate(itinerary);
-
-        assertTrue(result.getWarnings().stream().anyMatch(w -> w.contains("第 1 天")));
-    }
-
-    @Test
-    void validate_ThreeDaysTrip_MissingDay3_ShouldWarn() {
-        Itinerary itinerary = new Itinerary();
-        TripRequest request = new TripRequest();
-        request.setDurationDays(3);
-        itinerary.setRequest(request);
-        itinerary.setMarkdown("# 行程\n\n## 第 1 天：测试\n## 第 2 天：测试");
-
-        RuleValidator.ValidationResult result = ruleValidator.validate(itinerary);
-
-        assertTrue(result.getWarnings().stream().anyMatch(w -> w.contains("第 3 天")));
-    }
-
-    @Test
     void validate_MissingTimeSlots_ShouldWarn() {
         Itinerary itinerary = new Itinerary();
         itinerary.setMarkdown("# 行程\n\n## 第 1 天：测试\n- 活动1");

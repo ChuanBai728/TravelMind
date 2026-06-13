@@ -5,6 +5,7 @@ spring:
 logging:
   level:
     com.travelmind: WARN
+    com.travelmind.perf: INFO
 
 travelmind:
   llm:

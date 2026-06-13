@@ -22,7 +22,20 @@ public interface LlmClient {
      * @param callback 文本片段回调
      * @return 流式响应（包含完整内容和 token 信息）
      */
-    StreamResponse chatStream(LlmRequest request, Consumer<String> callback);
+    default StreamResponse chatStream(LlmRequest request, Consumer<String> callback) {
+        LlmResponse chatResponse = chat(request);
+        String content = chatResponse.getContent();
+        if (callback != null && content != null && !content.isEmpty()) {
+            callback.accept(content);
+        }
+
+        StreamResponse streamResponse = new StreamResponse();
+        streamResponse.setContent(content);
+        streamResponse.setPromptTokens(chatResponse.getPromptTokens());
+        streamResponse.setCompletionTokens(chatResponse.getCompletionTokens());
+        streamResponse.setLatencyMs(chatResponse.getLatencyMs());
+        return streamResponse;
+    }
 
     /**
      * 获取提供者名称

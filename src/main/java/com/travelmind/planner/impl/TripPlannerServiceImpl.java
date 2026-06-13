@@ -25,6 +25,7 @@ import java.util.function.Consumer;
 public class TripPlannerServiceImpl implements TripPlannerService {
 
     private static final Logger log = LoggerFactory.getLogger(TripPlannerServiceImpl.class);
+    private static final Logger perfLog = LoggerFactory.getLogger("com.travelmind.perf");
 
     private final IntentParser intentParser;
     private final TripContextBuilder tripContextBuilder;
@@ -55,8 +56,10 @@ public class TripPlannerServiceImpl implements TripPlannerService {
 
     @Override
     public Itinerary handleUserMessage(Long sessionId, String userInput) {
+        long totalStart = System.currentTimeMillis();
         TripContext context = tripContextBuilder.build(sessionId, userInput, null);
 
+        long currentStart = System.currentTimeMillis();
         TravelSessionRepository.TravelSession session = travelSessionRepository.findById(sessionId);
         if (session != null && session.getCurrentItineraryId() != null) {
             ItineraryRepository.Itinerary itineraryEntity = itineraryRepository.findById(session.getCurrentItineraryId());
@@ -66,26 +69,23 @@ public class TripPlannerServiceImpl implements TripPlannerService {
             }
         }
 
+        logStage(sessionId, "load_current_itinerary", currentStart);
+
+        long intentStart = System.currentTimeMillis();
         IntentParser.ParsedIntent parsedIntent = intentParser.parse(userInput, context);
+        logStage(sessionId, "intent_parse", intentStart);
 
-        if (parsedIntent.isNeedClarification()) {
-            return buildClarification(sessionId, parsedIntent);
-        }
-
-        String intent = parsedIntent.getIntent();
-        if ("NEW_PLAN".equals(intent)) {
-            return createPlan(sessionId, userInput);
-        } else if ("MODIFY_PLAN".equals(intent)) {
-            return modifyPlan(sessionId, userInput);
-        } else {
-            return buildUnknownResponse(sessionId);
-        }
+        Itinerary result = routeParsedIntent(sessionId, userInput, parsedIntent, null);
+        logStage(sessionId, "total_handle_user_message", totalStart);
+        return result;
     }
 
     @Override
     public Itinerary handleUserMessageStream(Long sessionId, String userInput, Consumer<String> callback) {
+        long totalStart = System.currentTimeMillis();
         TripContext context = tripContextBuilder.build(sessionId, userInput, null);
 
+        long currentStart = System.currentTimeMillis();
         TravelSessionRepository.TravelSession session = travelSessionRepository.findById(sessionId);
         if (session != null && session.getCurrentItineraryId() != null) {
             ItineraryRepository.Itinerary itineraryEntity = itineraryRepository.findById(session.getCurrentItineraryId());
@@ -94,69 +94,54 @@ public class TripPlannerServiceImpl implements TripPlannerService {
                 context.setCurrentItinerary(currentItinerary);
             }
         }
+        logStage(sessionId, "load_current_itinerary", currentStart);
 
         // 意图解析（同步，不需要流式）
         System.out.println("  正在分析你的需求...");
         IntentParser.ParsedIntent parsedIntent;
+        long intentStart = System.currentTimeMillis();
         try {
             parsedIntent = intentParser.parse(userInput, context);
+            logStage(sessionId, "intent_parse", intentStart);
         } catch (Exception e) {
+            logStage(sessionId, "intent_parse_failed", intentStart);
             log.error("Intent parsing failed", e);
             return buildErrorResponse(sessionId, "意图解析失败: " + e.getMessage());
         }
 
-        if (parsedIntent.isNeedClarification()) {
-            return buildClarification(sessionId, parsedIntent);
-        }
-
-        String intent = parsedIntent.getIntent();
-        log.info("Parsed intent: {}", intent);
-
         try {
-            if ("NEW_PLAN".equals(intent)) {
-                return createPlanStream(sessionId, userInput, callback);
-            } else if ("MODIFY_PLAN".equals(intent)) {
-                return modifyPlanStream(sessionId, userInput, callback);
-            } else {
-                return buildUnknownResponse(sessionId);
-            }
+            Itinerary result = routeParsedIntent(sessionId, userInput, parsedIntent, callback);
+            logStage(sessionId, "total_handle_user_message_stream", totalStart);
+            return result;
         } catch (Exception e) {
-            log.error("Plan execution failed for intent: {}", intent, e);
+            log.error("Plan execution failed for intent: {}", parsedIntent.getIntent(), e);
             return buildErrorResponse(sessionId, "行程处理失败: " + e.getMessage());
         }
     }
 
     @Override
     public Itinerary createPlan(Long sessionId, String userInput) {
+        long totalStart = System.currentTimeMillis();
         TripRequest tripRequest = parseAndValidateTripRequest(sessionId, userInput);
         if (tripRequest == null) {
             return buildErrorResponse(sessionId, "请提供目的地和出行天数，例如：\"帮我规划去上海的三日旅游的行程\"");
         }
 
-        TripContext context = buildTripContext(sessionId, userInput, tripRequest);
-
-        Itinerary itinerary = itineraryGenerator.generate(context);
-
-        validateAndAttachWarnings(itinerary);
-        saveTripData(sessionId, tripRequest, itinerary);
-
+        Itinerary itinerary = createPlanFromTripRequest(sessionId, userInput, tripRequest, null);
+        logStage(sessionId, "total_create_plan", totalStart);
         return itinerary;
     }
 
     @Override
     public Itinerary createPlanStream(Long sessionId, String userInput, Consumer<String> callback) {
+        long totalStart = System.currentTimeMillis();
         TripRequest tripRequest = parseAndValidateTripRequest(sessionId, userInput);
         if (tripRequest == null) {
             return buildErrorResponse(sessionId, "请提供目的地和出行天数，例如：\"帮我规划去上海的三日旅游的行程\"");
         }
 
-        TripContext context = buildTripContext(sessionId, userInput, tripRequest);
-
-        Itinerary itinerary = itineraryGenerator.generateStream(context, callback);
-
-        validateAndAttachWarnings(itinerary);
-        saveTripData(sessionId, tripRequest, itinerary);
-
+        Itinerary itinerary = createPlanFromTripRequest(sessionId, userInput, tripRequest, callback);
+        logStage(sessionId, "total_create_plan_stream", totalStart);
         return itinerary;
     }
 
@@ -200,10 +185,62 @@ public class TripPlannerServiceImpl implements TripPlannerService {
 
     // ========== 辅助方法 ==========
 
+    private Itinerary routeParsedIntent(Long sessionId, String userInput, IntentParser.ParsedIntent parsedIntent,
+                                        Consumer<String> callback) {
+        if (parsedIntent.isNeedClarification()) {
+            return buildClarification(sessionId, parsedIntent);
+        }
+
+        String intent = parsedIntent.getIntent();
+        log.info("Parsed intent: {}", intent);
+
+        if ("NEW_PLAN".equals(intent)) {
+            TripRequest tripRequest = validateTripRequest(parsedIntent, userInput);
+            if (tripRequest == null) {
+                return buildErrorResponse(sessionId, "Please provide destination and duration days.");
+            }
+            return createPlanFromTripRequest(sessionId, userInput, tripRequest, callback);
+        } else if ("MODIFY_PLAN".equals(intent)) {
+            if (callback == null) {
+                return modifyPlan(sessionId, userInput);
+            }
+            return modifyPlanStream(sessionId, userInput, callback);
+        }
+
+        return buildUnknownResponse(sessionId);
+    }
+
+    private Itinerary createPlanFromTripRequest(Long sessionId, String userInput, TripRequest tripRequest,
+                                                Consumer<String> callback) {
+        TripContext context = buildTripContext(sessionId, userInput, tripRequest);
+
+        long generateStart = System.currentTimeMillis();
+        Itinerary itinerary = callback == null
+                ? itineraryGenerator.generate(context)
+                : itineraryGenerator.generateStream(context, callback);
+        logStage(sessionId, callback == null ? "itinerary_generate" : "itinerary_generate_stream", generateStart);
+
+        long validateStart = System.currentTimeMillis();
+        validateAndAttachWarnings(itinerary);
+        logStage(sessionId, "rule_validate", validateStart);
+
+        long saveStart = System.currentTimeMillis();
+        saveTripData(sessionId, tripRequest, itinerary);
+        logStage(sessionId, "save_trip_data", saveStart);
+
+        return itinerary;
+    }
+
     private TripRequest parseAndValidateTripRequest(Long sessionId, String userInput) {
         TripContext tempContext = tripContextBuilder.build(sessionId, userInput, null);
+        long intentStart = System.currentTimeMillis();
         IntentParser.ParsedIntent parsedIntent = intentParser.parse(userInput, tempContext);
+        logStage(sessionId, "intent_parse", intentStart);
 
+        return validateTripRequest(parsedIntent, userInput);
+    }
+
+    private TripRequest validateTripRequest(IntentParser.ParsedIntent parsedIntent, String userInput) {
         if (parsedIntent.getTripRequest() == null ||
                 parsedIntent.getTripRequest().getDestination() == null ||
                 parsedIntent.getTripRequest().getDurationDays() == null) {
@@ -216,11 +253,19 @@ public class TripPlannerServiceImpl implements TripPlannerService {
     }
 
     private TripContext buildTripContext(Long sessionId, String userInput, TripRequest tripRequest) {
+        long contextStart = System.currentTimeMillis();
         TripContext context = tripContextBuilder.build(sessionId, userInput, tripRequest);
+        logStage(sessionId, "build_trip_context_base", contextStart);
+
+        long poiStart = System.currentTimeMillis();
         List<Poi> candidatePois = candidatePoiBuilder.build(tripRequest);
         context.setCandidatePois(candidatePois);
+        logStage(sessionId, "build_candidate_pois count=" + candidatePois.size(), poiStart);
+
+        long routeStart = System.currentTimeMillis();
         List<RouteInfo> routeInfos = estimateRoutes(candidatePois, tripRequest.getTransportMode());
         context.setRouteInfos(routeInfos);
+        logStage(sessionId, "estimate_routes count=" + routeInfos.size(), routeStart);
         return context;
     }
 
@@ -259,6 +304,13 @@ public class TripPlannerServiceImpl implements TripPlannerService {
         RuleValidator.ValidationResult validationResult = ruleValidator.validate(itinerary);
         if (!validationResult.getWarnings().isEmpty()) {
             itinerary.setReminders(validationResult.getWarnings());
+        }
+    }
+
+    private void logStage(Long sessionId, String stage, long startTimeMs) {
+        if (perfLog.isInfoEnabled()) {
+            perfLog.info("session={} stage={} elapsedMs={}",
+                    sessionId, stage, System.currentTimeMillis() - startTimeMs);
         }
     }
 

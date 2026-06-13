@@ -9,6 +9,9 @@ TravelMind 是一个基于 Java 的命令行智能行程规划助手。用户可
 - 接入高德地图 API 查询 POI 和地理编码信息。
 - 路线距离和耗时默认使用本地 Haversine 公式估算，不调用高德路线规划。
 - 使用内存仓库存储会话、需求、行程、POI 缓存和大模型调用日志。
+- 流式生成路径复用首次意图解析结果，避免同一轮请求重复调用大模型。
+- POI 查询优先使用内存缓存，缓存不足时并发查询高德关键词，减少首轮等待时间。
+- 提供阶段耗时日志，便于定位慢在意图解析、POI 查询、路线估算还是大模型生成。
 - 支持多轮对话修改已有行程，例如“第二天不要去博物馆，换成迪士尼”。
 - 支持导出当前行程为 Markdown 文件。
 - 使用 `.env` 管理大模型、高德和导出目录等敏感配置。
@@ -89,14 +92,45 @@ EXPORT_DIR=exports
 | `MIMO_CHAT_PATH` | 是 | 对话接口路径，默认 `/v1/messages` |
 | `MIMO_API_KEY` | 是 | 大模型 API Key |
 | `MIMO_MODEL` | 是 | 使用的模型名称 |
+| `MIMO_INTENT_MODEL` | 否 | 意图解析专用模型名称；未配置时使用主模型 |
 | `MIMO_TEMPERATURE` | 否 | 大模型采样温度，默认 `0.4` |
 | `MIMO_TIMEOUT_SECONDS` | 否 | 大模型请求超时时间 |
+| `OPENAI_BASE_URL` | 否 | OpenAI 兼容接口基础地址；配置后可作为意图解析专用客户端 |
+| `OPENAI_CHAT_PATH` | 否 | OpenAI 兼容对话接口路径，默认 `/v1/chat/completions` |
+| `OPENAI_API_KEY` | 否 | OpenAI 兼容接口 API Key |
+| `OPENAI_MODEL` | 否 | OpenAI 兼容模型名称，优先用于意图解析 |
+| `OPENAI_TEMPERATURE` | 否 | OpenAI 兼容模型采样温度，默认 `0.3` |
+| `OPENAI_TIMEOUT_SECONDS` | 否 | OpenAI 兼容请求超时时间，默认 `30` |
 | `AMAP_API_KEY` | 是 | 高德地图 API Key |
 | `AMAP_BASE_URL` | 否 | 高德 API 基础地址 |
 | `AMAP_TIMEOUT_SECONDS` | 否 | 高德 API 请求超时时间 |
 | `EXPORT_DIR` | 否 | Markdown 行程导出目录，默认 `exports` |
 
-### 3. 运行项目
+### 3. 性能与耗时日志
+
+项目默认开启 `com.travelmind.perf` 的 INFO 日志，用于观察一轮答案生成拆分后的阶段耗时。典型日志如下：
+
+```text
+session=1 stage=load_current_itinerary elapsedMs=0
+session=1 stage=intent_parse elapsedMs=58
+session=1 stage=build_candidate_pois count=8 elapsedMs=430
+session=1 stage=estimate_routes count=7 elapsedMs=1
+session=1 stage=itinerary_generate_stream elapsedMs=18200
+session=1 stage=rule_validate elapsedMs=1
+session=1 stage=save_trip_data elapsedMs=6
+session=1 stage=total_handle_user_message_stream elapsedMs=18720
+```
+
+这些日志用于判断瓶颈位置：
+
+- `intent_parse` 慢：优先检查意图解析模型、快路径规则和模型服务响应。
+- `build_candidate_pois` 慢：优先检查高德 API、POI 缓存命中率和关键词数量。
+- `itinerary_generate` 或 `itinerary_generate_stream` 慢：主要受主模型生成速度、Prompt 长度和输出长度影响。
+- `total_handle_user_message_stream` 是 CLI 流式入口的端到端耗时。
+
+如果希望减少日志输出，可以在 `application.yml` 中把 `com.travelmind.perf` 调整为 `WARN`。
+
+### 4. 运行项目
 
 开发模式运行：
 
@@ -286,13 +320,13 @@ travelmind
 1. 用户在 CLI 输入自然语言需求。
 2. `CommandRouter` 判断这是普通输入，不是系统命令。
 3. `TripPlannerServiceImpl.handleUserMessage` 构建当前会话上下文。
-4. `IntentParserImpl` 通过 `LlmClient` 调用大模型解析用户意图，得到目的地、天数、偏好等结构化信息。
+4. `IntentParserImpl` 通过 `LlmClient` 调用大模型解析用户意图，得到目的地、天数、偏好等结构化信息；`handleUserMessage` 和 `handleUserMessageStream` 会复用这次解析结果，不再在创建行程时重复解析。
 5. 如果目的地或天数缺失，系统返回追问内容，不覆盖当前已有行程。
 6. `TripContextBuilder` 补齐默认人数、预算、节奏、交通方式等字段。
-7. `CandidatePoiBuilder` 通过高德地图查询候选 POI，并写入 POI 缓存。
+7. `CandidatePoiBuilder` 先查内存 POI 缓存；缓存数量足够时直接返回，缓存不足时并发查询高德关键词，并写入 POI 缓存。
 8. `TripPlannerServiceImpl` 使用 Haversine 公式估算相邻 POI 的距离和耗时。
 9. `ItineraryGenerator` 通过 `LlmClient` 调用大模型生成 Markdown 行程。
-10. `RuleValidator` 做基础规则校验，例如天数、活动结构、提醒信息等。
+10. `RuleValidator` 做基础规则校验，例如时间段覆盖、提醒信息等。
 11. 内存仓库保存 `TripRequest`、`Itinerary`，并更新当前会话的当前行程 ID。
 
 ### 修改行程
@@ -365,6 +399,25 @@ Java 服务负责：
 
 这样的分工可以避免“大模型黑盒控制整个系统”，更符合工程化项目的设计思路。
 
+### 为什么要拆阶段耗时
+
+行程生成的总耗时通常由多段串行流程叠加而来：意图解析、POI 查询、路线估算、主模型生成、规则校验和保存。只看总耗时无法判断应该优化模型、地图接口还是本地编排。
+
+`TripPlannerServiceImpl` 使用 `com.travelmind.perf` 输出阶段耗时日志，既能定位首 token 前等待，也能在优化后对比收益。例如去掉重复意图解析后，流式入口在新建行程时只保留一次 `intent_parse`，后续直接使用已解析出的 `TripRequest` 进入 POI 和生成阶段。
+
+### POI 缓存与并发查询策略
+
+`CandidatePoiBuilder` 的策略是：
+
+1. 先按目的地城市读取 `PoiCacheRepository`。
+2. 缓存 POI 数量达到基础阈值时直接使用缓存，跳过高德 API。
+3. 缓存不足时，根据默认关键词和用户偏好组成查询词。
+4. 多个关键词并发调用高德 POI 搜索。
+5. 每个关键词失败只影响该关键词结果，不中断整次行程生成。
+6. 搜索结果统一写入缓存并按 `sourceId` 去重。
+
+这样可以减少第二次及后续同城规划的等待时间，也避免首轮规划被多个高德关键词串行请求拖慢。
+
 ## 测试
 
 当前测试覆盖：
@@ -385,8 +438,10 @@ Java 服务负责：
 mvn clean test
 ```
 
-最近一次验证结果：
+当前编译验证：
 
 ```text
-Tests run: 52, Failures: 0, Errors: 0, Skipped: 0
+mvn -DskipTests compile
+BUILD SUCCESS
 ```
+

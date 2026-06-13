@@ -149,10 +149,10 @@ public class IntentParserImpl implements IntentParser {
     }
 
     private ParsedIntent parseWithLlm(String userInput, TripContext context) {
-        LlmClient llmClient = llmClientFactory.getClient();
+        // 如果配置了 OpenAI 兼容的小模型，使用专用意图解析客户端
+        LlmClient llmClient = llmClientFactory.getIntentClient();
         LlmRequest request = new LlmRequest("INTENT_PARSE");
 
-        // 如果配置了专用意图解析模型，使用小模型
         String intentModel = llmClientFactory.getIntentModel();
         if (intentModel != null && !intentModel.isEmpty()) {
             request.setModel(intentModel);

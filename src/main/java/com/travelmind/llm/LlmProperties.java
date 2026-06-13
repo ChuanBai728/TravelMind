@@ -12,11 +12,14 @@ public class LlmProperties {
 
     private String provider = "mimo";
     private MimoProperties mimo = new MimoProperties();
+    private OpenAiProperties openai = new OpenAiProperties();
 
     public String getProvider() { return provider; }
     public void setProvider(String provider) { this.provider = provider; }
     public MimoProperties getMimo() { return mimo; }
     public void setMimo(MimoProperties mimo) { this.mimo = mimo; }
+    public OpenAiProperties getOpenai() { return openai; }
+    public void setOpenai(OpenAiProperties openai) { this.openai = openai; }
 
     public static class MimoProperties {
         private String baseUrl;
@@ -37,6 +40,28 @@ public class LlmProperties {
         public void setModel(String model) { this.model = model; }
         public String getIntentModel() { return intentModel; }
         public void setIntentModel(String intentModel) { this.intentModel = intentModel; }
+        public Double getTemperature() { return temperature; }
+        public void setTemperature(Double temperature) { this.temperature = temperature; }
+        public Integer getTimeoutSeconds() { return timeoutSeconds; }
+        public void setTimeoutSeconds(Integer timeoutSeconds) { this.timeoutSeconds = timeoutSeconds; }
+    }
+
+    public static class OpenAiProperties {
+        private String baseUrl;
+        private String chatPath = "/v1/chat/completions";
+        private String apiKey;
+        private String model;
+        private Double temperature = 0.3;
+        private Integer timeoutSeconds = 30;
+
+        public String getBaseUrl() { return baseUrl; }
+        public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
+        public String getChatPath() { return chatPath; }
+        public void setChatPath(String chatPath) { this.chatPath = chatPath; }
+        public String getApiKey() { return apiKey; }
+        public void setApiKey(String apiKey) { this.apiKey = apiKey; }
+        public String getModel() { return model; }
+        public void setModel(String model) { this.model = model; }
         public Double getTemperature() { return temperature; }
         public void setTemperature(Double temperature) { this.temperature = temperature; }
         public Integer getTimeoutSeconds() { return timeoutSeconds; }

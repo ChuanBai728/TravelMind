@@ -17,6 +17,13 @@ travelmind:
       intent-model: ${MIMO_INTENT_MODEL:}
       temperature: ${MIMO_TEMPERATURE:0.4}
       timeout-seconds: ${MIMO_TIMEOUT_SECONDS:60}
+    openai:
+      base-url: ${OPENAI_BASE_URL:}
+      chat-path: ${OPENAI_CHAT_PATH:/v1/chat/completions}
+      api-key: ${OPENAI_API_KEY:}
+      model: ${OPENAI_MODEL:}
+      temperature: ${OPENAI_TEMPERATURE:0.3}
+      timeout-seconds: ${OPENAI_TIMEOUT_SECONDS:30}
   amap:
     base-url: ${AMAP_BASE_URL:https://restapi.amap.com}
     api-key: ${AMAP_API_KEY:}

@@ -97,19 +97,32 @@ public class TripPlannerServiceImpl implements TripPlannerService {
 
         // 意图解析（同步，不需要流式）
         System.out.println("  正在分析你的需求...");
-        IntentParser.ParsedIntent parsedIntent = intentParser.parse(userInput, context);
+        IntentParser.ParsedIntent parsedIntent;
+        try {
+            parsedIntent = intentParser.parse(userInput, context);
+        } catch (Exception e) {
+            log.error("Intent parsing failed", e);
+            return buildErrorResponse(sessionId, "意图解析失败: " + e.getMessage());
+        }
 
         if (parsedIntent.isNeedClarification()) {
             return buildClarification(sessionId, parsedIntent);
         }
 
         String intent = parsedIntent.getIntent();
-        if ("NEW_PLAN".equals(intent)) {
-            return createPlanStream(sessionId, userInput, callback);
-        } else if ("MODIFY_PLAN".equals(intent)) {
-            return modifyPlanStream(sessionId, userInput, callback);
-        } else {
-            return buildUnknownResponse(sessionId);
+        log.info("Parsed intent: {}", intent);
+
+        try {
+            if ("NEW_PLAN".equals(intent)) {
+                return createPlanStream(sessionId, userInput, callback);
+            } else if ("MODIFY_PLAN".equals(intent)) {
+                return modifyPlanStream(sessionId, userInput, callback);
+            } else {
+                return buildUnknownResponse(sessionId);
+            }
+        } catch (Exception e) {
+            log.error("Plan execution failed for intent: {}", intent, e);
+            return buildErrorResponse(sessionId, "行程处理失败: " + e.getMessage());
         }
     }
 

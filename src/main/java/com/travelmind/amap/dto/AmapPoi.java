@@ -36,8 +36,9 @@ public class AmapPoi {
     @JsonProperty("adname")
     private String districtName;
 
+    // business_area 可能是字符串或数组，用 Object 接收
     @JsonProperty("business_area")
-    private String businessArea;
+    private Object businessArea;
 
     // tag 可能是字符串或数组，用 Object 接收
     @JsonProperty("tag")
@@ -61,8 +62,8 @@ public class AmapPoi {
     public void setCityName(String cityName) { this.cityName = cityName; }
     public String getDistrictName() { return districtName; }
     public void setDistrictName(String districtName) { this.districtName = districtName; }
-    public String getBusinessArea() { return businessArea; }
-    public void setBusinessArea(String businessArea) { this.businessArea = businessArea; }
+    public Object getBusinessArea() { return businessArea; }
+    public void setBusinessArea(Object businessArea) { this.businessArea = businessArea; }
     public Object getTag() { return tag; }
     public void setTag(Object tag) { this.tag = tag; }
 }

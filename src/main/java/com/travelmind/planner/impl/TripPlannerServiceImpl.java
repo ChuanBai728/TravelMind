@@ -227,8 +227,8 @@ public class TripPlannerServiceImpl implements TripPlannerService {
     private TripContext buildModifyContext(Long sessionId, String userInput, Itinerary currentItinerary) {
         TripRequest tripRequest = currentItinerary.getRequest() != null ? currentItinerary.getRequest() : new TripRequest();
         TripContext context = tripContextBuilder.build(sessionId, userInput, tripRequest);
-        List<Poi> candidatePois = candidatePoiBuilder.build(tripRequest);
-        context.setCandidatePois(candidatePois);
+        // 修改行程时不重新搜索 POI，跳过高德 API 调用，直接用空列表
+        context.setCandidatePois(new ArrayList<>());
         return context;
     }
 

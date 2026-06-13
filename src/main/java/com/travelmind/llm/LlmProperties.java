@@ -23,6 +23,7 @@ public class LlmProperties {
         private String chatPath = "/v1/messages";
         private String apiKey;
         private String model;
+        private String intentModel;
         private Double temperature = 0.4;
         private Integer timeoutSeconds = 60;
 
@@ -34,6 +35,8 @@ public class LlmProperties {
         public void setApiKey(String apiKey) { this.apiKey = apiKey; }
         public String getModel() { return model; }
         public void setModel(String model) { this.model = model; }
+        public String getIntentModel() { return intentModel; }
+        public void setIntentModel(String intentModel) { this.intentModel = intentModel; }
         public Double getTemperature() { return temperature; }
         public void setTemperature(Double temperature) { this.temperature = temperature; }
         public Integer getTimeoutSeconds() { return timeoutSeconds; }

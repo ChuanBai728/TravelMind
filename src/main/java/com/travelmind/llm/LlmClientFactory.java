@@ -31,4 +31,11 @@ public class LlmClientFactory {
                 throw new IllegalArgumentException("Unsupported LLM provider: " + provider);
         }
     }
+
+    /**
+     * 获取意图解析专用模型名称（未配置时返回 null，使用默认模型）
+     */
+    public String getIntentModel() {
+        return llmProperties.getMimo().getIntentModel();
+    }
 }

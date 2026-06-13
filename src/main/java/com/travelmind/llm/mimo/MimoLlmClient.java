@@ -196,7 +196,9 @@ public class MimoLlmClient implements LlmClient {
         LlmProperties.MimoProperties mimoConfig = llmProperties.getMimo();
 
         ObjectNode requestBody = objectMapper.createObjectNode();
-        requestBody.put("model", mimoConfig.getModel());
+        String model = (request.getModel() != null && !request.getModel().isEmpty())
+                ? request.getModel() : mimoConfig.getModel();
+        requestBody.put("model", model);
         requestBody.put("max_tokens", DEFAULT_MAX_TOKENS);
         requestBody.put("temperature",
                 request.getTemperature() != null ? request.getTemperature() : mimoConfig.getTemperature());

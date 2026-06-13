@@ -26,6 +26,11 @@ public class LlmRequest {
     private Double temperature;
 
     /**
+     * 模型名称（覆盖默认模型）
+     */
+    private String model;
+
+    /**
      * 元数据
      */
     private Map<String, Object> metadata;
@@ -62,6 +67,14 @@ public class LlmRequest {
 
     public void setTemperature(Double temperature) {
         this.temperature = temperature;
+    }
+
+    public String getModel() {
+        return model;
+    }
+
+    public void setModel(String model) {
+        this.model = model;
     }
 
     public Map<String, Object> getMetadata() {

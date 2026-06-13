@@ -152,6 +152,12 @@ public class IntentParserImpl implements IntentParser {
         LlmClient llmClient = llmClientFactory.getClient();
         LlmRequest request = new LlmRequest("INTENT_PARSE");
 
+        // 如果配置了专用意图解析模型，使用小模型
+        String intentModel = llmClientFactory.getIntentModel();
+        if (intentModel != null && !intentModel.isEmpty()) {
+            request.setModel(intentModel);
+        }
+
         String contextSummary = buildContextSummary(context);
 
         request.addMessage("system", PromptTemplates.INTENT_PARSE_SYSTEM);

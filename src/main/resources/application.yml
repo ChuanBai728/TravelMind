@@ -14,6 +14,7 @@ travelmind:
       chat-path: ${MIMO_CHAT_PATH:/v1/messages}
       api-key: ${MIMO_API_KEY:}
       model: ${MIMO_MODEL:}
+      intent-model: ${MIMO_INTENT_MODEL:}
       temperature: ${MIMO_TEMPERATURE:0.4}
       timeout-seconds: ${MIMO_TIMEOUT_SECONDS:60}
   amap:
